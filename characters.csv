@@ -1,5 +1,5 @@
-name,team,x,y,speed,mv,jump,hp,mp,skills,r,g,b
-Ramza,Player,0,0,11,3,1,120,20,Attack|Chakra,50,120,240
-Agrias,Player,0,1,10,2,2,100,40,Attack|Fire|Blizzard,100,160,255
-Gafgarion,Enemy,5,4,12,3,1,140,10,Attack,220,60,60
-Knight B,Enemy,4,5,9,2,1,110,0,Attack,180,50,50
+name,team,class,x,y,speed,mv,jump,hp,mp,skills,r,g,b,portrait_path
+Ramza,Player,Knight,0,0,11,3,1,120,20,Attack|Chakra,50,120,240,
+Agrias,Player,Mage,0,1,10,2,2,100,40,Attack|Fire|Blizzard,100,160,255,
+Gafgarion,Enemy,Archer,5,4,12,3,1,140,10,Attack,220,60,60,
+Knight B,Enemy,Knight,4,5,9,2,1,110,0,Attack,180,50,50,

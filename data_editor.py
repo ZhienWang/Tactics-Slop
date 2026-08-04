@@ -16,12 +16,21 @@ Fire,10,3,50,Magic,255,100,50
 Blizzard,12,3,45,Magic,100,200,255
 Chakra,0,1,-40,Heal,100,255,100"""
 
-CHARACTERS_CSV_DUMMY = """name,team,x,y,speed,mv,jump,hp,mp,skills,r,g,b
-Ramza,Player,0,0,11,3,1,120,20,Attack|Chakra,50,120,240
-Agrias,Player,0,1,10,2,2,100,40,Attack|Fire|Blizzard,100,160,255
-Gafgarion,Enemy,5,4,12,3,1,140,10,Attack,220,60,60
-Knight B,Enemy,4,5,9,2,1,110,0,Attack,180,50,50"""
+CHARACTERS_CSV_DUMMY = """name,team,class,x,y,speed,mv,jump,hp,mp,skills,r,g,b,portrait_path
+Ramza,Player,Knight,0,0,11,3,1,120,20,Attack|Chakra,50,120,240,
+Agrias,Player,Mage,0,1,10,2,2,100,40,Attack|Fire|Blizzard,100,160,255,
+Gafgarion,Enemy,Archer,5,4,12,3,1,140,10,Attack,220,60,60,
+Knight B,Enemy,Knight,4,5,9,2,1,110,0,Attack,180,50,50,"""
 
+TERRAIN_CSV_DUMMY = """C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png"""
+
+GAME_SETTINGS_CSV_DUMMY = """setting_name,value
+background_path,"""
 
 def generate_dummy_csv_files():
     """Writes the dummy text configurations to actual CSV files on disk."""
@@ -33,7 +42,14 @@ def generate_dummy_csv_files():
         
     with open("characters.csv", "w", newline="") as f:
         f.write(CHARACTERS_CSV_DUMMY.strip())
-    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv")
+
+    with open("terrain_layout.csv", "w", newline="") as f:
+        f.write(TERRAIN_CSV_DUMMY.strip())
+
+    with open("game_settings.csv", "w", newline="") as f:
+        f.write(GAME_SETTINGS_CSV_DUMMY.strip())
+
+    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv, terrain_layout.csv, game_settings.csv")
 
 
 # --- 2. THE CSV PARSING PIPELINE ---
@@ -65,6 +81,27 @@ def load_skills_from_csv(filepath="skills.csv"):
     return skills_registry
 
 
+def load_terrain_from_csv(filepath="terrain_layout.csv"):
+    """Parses terrain tile image paths from a CSV grid."""
+    terrain_grid = []
+    with open(filepath, "r") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if row:
+                terrain_grid.append([cell.strip() for cell in row])
+    return terrain_grid
+
+
+def load_settings_from_csv(filepath="game_settings.csv"):
+    """Parses simple key/value game settings from CSV."""
+    settings = {}
+    with open(filepath, "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            settings[row["setting_name"]] = row["value"]
+    return settings
+
+
 def load_characters_from_csv(filepath="characters.csv"):
     """Parses character stats and handles delimited skill lists."""
     character_list = []
@@ -75,6 +112,7 @@ def load_characters_from_csv(filepath="characters.csv"):
             char_data = {
                 "name": row["name"],
                 "team": row["team"],
+                "class": row.get("class", "").strip(),
                 "x": int(row["x"]),
                 "y": int(row["y"]),
                 "speed": int(row["speed"]),
@@ -84,7 +122,8 @@ def load_characters_from_csv(filepath="characters.csv"):
                 "mp": int(row["mp"]),
                 # Split the pipe-delimited string back into a real Python list
                 "skills": row["skills"].split("|") if row["skills"] else [],
-                "color": (int(row["r"]), int(row["g"]), int(row["b"]))
+                "color": (int(row["r"]), int(row["g"]), int(row["b"])),
+                "portrait_path": row.get("portrait_path", "").strip()
             }
             character_list.append(char_data)
     return character_list
