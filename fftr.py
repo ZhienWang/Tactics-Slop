@@ -1,7 +1,9 @@
 # -- vibe coding experiments --
+import os
 import pygame
 import sys
 import heapq
+from data_editor import generate_dummy_csv_files, load_map_from_csv, load_skills_from_csv, load_characters_from_csv
 
 # --- CONFIGURATION ---
 SCREEN_WIDTH = 1000
@@ -12,42 +14,20 @@ TILE_HEIGHT = 32
 BG_COLOR = (25, 25, 35)
 GRID_COLOR = (80, 80, 90)
 CURSOR_COLOR = (255, 215, 0)
+CHARACTER_PORTRAITS = {}
 
 # ==========================================
 # --- EDITABLE DATA MODELS (THE EDITORS) ---
 # ==========================================
 
-# 1. MAP LAYOUT EDITOR
-# Change the grid size or numbers to change tile elevations dynamically
-MAP_DATA = [
-    [0, 0, 1, 1, 0, 0],
-    [0, 1, 2, 1, 1, 0],
-    [1, 2, 4, 3, 2, 1],
-    [1, 2, 3, 2, 1, 0],
-    [0, 1, 2, 1, 0, 0],
-    [0, 0, 1, 0, 0, 0]
-]
-MAP_ROWS = len(MAP_DATA)
-MAP_COLS = len(MAP_DATA[0])
+MAP_DATA = []
+MAP_ROWS = 0
+MAP_COLS = 0
+SKILL_REGISTRY = {}
+CHARACTER_ROSTER = []
 
-# 2. SKILL / ABILITY EDITOR
-# Add or modify skills here. The engine reads these rules dynamically on cast.
-SKILL_REGISTRY = {
-    "Attack":      {"mp_cost": 0,  "range": 1, "damage": 30, "type": "Physical", "color": (200, 50, 50)},
-    "Fire":        {"mp_cost": 10, "range": 3, "damage": 50, "type": "Magic",    "color": (255, 100, 50)},
-    "Blizzard":    {"mp_cost": 12, "range": 3, "damage": 45, "type": "Magic",    "color": (100, 200, 255)},
-    "Chakra":      {"mp_cost": 0,  "range": 1, "damage": -40, "type": "Heal",    "color": (100, 255, 100)} # Negative damage heals
-}
-
-# 3. CHARACTER DATA EDITOR
-# Define combat rosters, starting positions, speed indices, and available skills
-CHARACTER_ROSTER = [
-    {"name": "Ramza",      "team": "Player", "x": 0, "y": 0, "speed": 11, "mv": 3, "jump": 1, "hp": 120, "mp": 20, "skills": ["Attack", "Chakra"],        "color": (50, 120, 240)},
-    {"name": "Agrias",     "team": "Player", "x": 0, "y": 1, "speed": 10, "mv": 2, "jump": 2, "hp": 100, "mp": 40, "skills": ["Attack", "Fire", "Blizzard"], "color": (100, 160, 255)},
-    {"name": "Gafgarion",  "team": "Enemy",  "x": 5, "y": 4, "speed": 12, "mv": 3, "jump": 1, "hp": 140, "mp": 10, "skills": ["Attack"],                  "color": (220, 60, 60)},
-    {"name": "Knight B",   "team": "Enemy",  "x": 4, "y": 5, "speed": 9,  "mv": 2, "jump": 1, "hp": 110, "mp": 0,  "skills": ["Attack"],                  "color": (180, 50, 50)}
-]
-
+# The data will be loaded from CSV files by the main entry point.
+# If those files do not exist, generate sample CSVs first.
 # ==========================================
 
 # --- ENGINE UNIT ENGINE OBJECT ---
@@ -160,14 +140,12 @@ def draw_iso_tile(surface, sx, sy, height, color):
         pygame.draw.polygon(surface, (int(color[0]*0.7), int(color[1]*0.7), int(color[2]*0.7)), right_wall)
 
     pygame.draw.polygon(surface, color, top_points)
+    draw_tile_texture(surface, top_points, height, color)
     pygame.draw.polygon(surface, GRID_COLOR, top_points, 1)
     return top_points
 
 def draw_unit(surface, sx, sy, unit, is_active=False):
     cx, cy = sx, sy + (TILE_HEIGHT // 2) - 12
-    pygame.draw.circle(surface, unit.color, (cx, cy), 12)
-    pygame.draw.circle(surface, (255, 255, 255), (cx, cy), 12, 2)
-    
     font = pygame.font.SysFont(None, 14)
     tag = "P" if unit.team == "Player" else "E"
     surface.blit(font.render(tag, True, (255, 255, 255)), (cx - 4, cy - 5))
@@ -177,11 +155,104 @@ def draw_unit(surface, sx, sy, unit, is_active=False):
     hp_pct = max(0, unit.hp / unit.max_hp)
     pygame.draw.rect(surface, (50, 200, 50), (cx - 15, cy - 22, int(30 * hp_pct), 4))
 
+    portrait = CHARACTER_PORTRAITS.get(unit.name)
+    if portrait:
+        portrait_rect = portrait.get_rect(center=(cx, cy))
+        surface.blit(portrait, portrait_rect)
+        pygame.draw.circle(surface, (255, 255, 255), (cx, cy), 15, 2)
+    else:
+        pygame.draw.circle(surface, unit.color, (cx, cy), 12)
+        pygame.draw.circle(surface, (255, 255, 255), (cx, cy), 12, 2)
+
     if is_active:
         pygame.draw.polygon(surface, (255, 60, 60), [(cx, cy - 28), (cx - 5, cy - 35), (cx + 5, cy - 35)])
 
+
+# --- VISUAL HELPER FUNCTIONS ---
+def create_portrait_surface(color, label, size=32):
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    base = tuple(max(0, min(255, int(c * 0.8 + 30))) for c in color)
+    pygame.draw.rect(surf, base, surf.get_rect(), border_radius=8)
+    accent = tuple(max(0, min(255, int(c * 1.1))) for c in color)
+    for i in range(2):
+        pygame.draw.circle(surf, accent, (size // 2, size // 2), size // 2 - 6 - (i * 8), 2)
+    pygame.draw.circle(surf, color, (size // 2, size // 2), size // 2 - 10)
+    font = pygame.font.SysFont(None, size // 2)
+    letter = font.render(label[0], True, (245, 245, 245))
+    surf.blit(letter, letter.get_rect(center=(size // 2, size // 2)))
+    return surf
+
+
+def draw_tile_texture(surface, top_points, height, color):
+    pattern_color = tuple(max(0, min(255, c + 30)) for c in color)
+    detail_color = tuple(max(0, min(255, c - 40)) for c in color)
+    cx = sum(p[0] for p in top_points) / 4
+    cy = sum(p[1] for p in top_points) / 4
+
+    if height == 0:
+        pygame.draw.circle(surface, pattern_color, (int(cx), int(cy)), 8, 1)
+        pygame.draw.line(surface, detail_color, top_points[0], top_points[2], 1)
+        pygame.draw.line(surface, detail_color, top_points[1], top_points[3], 1)
+        pygame.draw.circle(surface, detail_color, (int(cx), int(cy)), 4, 1)
+    elif height == 1:
+        pygame.draw.line(surface, pattern_color, top_points[0], top_points[1], 1)
+        pygame.draw.line(surface, pattern_color, top_points[1], top_points[2], 1)
+        pygame.draw.line(surface, detail_color, top_points[2], top_points[3], 1)
+        for offset in [-10, 10]:
+            start = (cx + offset, cy - 4)
+            end = (cx + offset, cy + 6)
+            pygame.draw.line(surface, detail_color, start, end, 1)
+    else:
+        pygame.draw.line(surface, detail_color, (top_points[0][0] + 8, top_points[0][1] + 6), (top_points[2][0] - 8, top_points[2][1] + 6), 1)
+        pygame.draw.line(surface, detail_color, (top_points[1][0] - 8, top_points[1][1] + 6), (top_points[3][0] + 8, top_points[3][1] + 6), 1)
+        pygame.draw.circle(surface, pattern_color, (int(cx), int(cy + 2)), 3)
+
+
+# --- INPUT HELPER FUNCTIONS ---
+def point_in_polygon(point, polygon):
+    x, y = point
+    inside = False
+    for i in range(len(polygon)):
+        j = (i - 1) % len(polygon)
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        intersect = ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 1e-6) + xi)
+        if intersect:
+            inside = not inside
+    return inside
+
+
+def screen_to_map(mx, my, origin_x, origin_y):
+    last_hit = None
+    for y in range(MAP_ROWS):
+        for x in range(MAP_COLS):
+            z = MAP_DATA[y][x]
+            sx, sy = iso_to_screen(x, y, z, origin_x, origin_y)
+            top_points = [
+                (sx, sy),
+                (sx + TILE_WIDTH // 2, sy + TILE_HEIGHT // 2),
+                (sx, sy + TILE_HEIGHT),
+                (sx - TILE_WIDTH // 2, sy + TILE_HEIGHT // 2)
+            ]
+            if point_in_polygon((mx, my), top_points):
+                last_hit = (x, y)
+    return last_hit
+
+
 # --- MAIN ENGINE MODULE ---
 def main():
+    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, CHARACTER_ROSTER
+
+    required_files = ["map_layout.csv", "skills.csv", "characters.csv"]
+    if not all(os.path.exists(filename) for filename in required_files):
+        generate_dummy_csv_files()
+
+    MAP_DATA = load_map_from_csv()
+    SKILL_REGISTRY = load_skills_from_csv()
+    CHARACTER_ROSTER = load_characters_from_csv()
+    MAP_ROWS = len(MAP_DATA)
+    MAP_COLS = len(MAP_DATA[0]) if MAP_DATA else 0
+
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Tactics Engine: Data Driven A* Pipeline")
@@ -193,6 +264,8 @@ def main():
 
     # Build character entities dynamically from data registry blueprint mapping definitions
     units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
+    global CHARACTER_PORTRAITS
+    CHARACTER_PORTRAITS = {u.name: create_portrait_surface(u.color, u.name) for u in units}
 
     game_state = "TICKING" 
     active_unit = None
@@ -319,6 +392,76 @@ def main():
                             menu_index = 2 
                             game_state = "MENU"
 
+            elif event.type == pygame.MOUSEMOTION and game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
+                hit_tile = screen_to_map(event.pos[0], event.pos[1], origin_x, origin_y)
+                if hit_tile is not None:
+                    cursor_x, cursor_y = hit_tile
+
+            elif event.type == pygame.MOUSEBUTTONDOWN and game_state != "TICKING":
+                if event.button == 1:
+                    if game_state in ["MENU", "SUBMENU_ACT"]:
+                        item_height = 26
+                        mx, my = event.pos
+                        menu_x, menu_y = 780, 30
+                        if menu_x <= mx <= menu_x + 200 and menu_y <= my <= menu_y + 180:
+                            relative_y = my - (menu_y + 45)
+                            if 0 <= relative_y < len(current_menu) * item_height:
+                                clicked_index = relative_y // item_height
+                                if clicked_index < len(current_menu):
+                                    menu_index = clicked_index
+                                    choice = current_menu[menu_index]
+                                    if game_state == "MENU":
+                                        if choice == "Move" and not active_unit.has_moved:
+                                            valid_tiles = get_valid_moves_a_star(active_unit, units)
+                                            game_state = "MOVE_SELECT"
+                                        elif choice == "Act" and not active_unit.has_acted:
+                                            current_menu = active_unit.skills
+                                            menu_index = 0
+                                            game_state = "SUBMENU_ACT"
+                                        elif choice == "Wait":
+                                            active_unit.ct = 0
+                                            game_state = "TICKING"
+                                    elif game_state == "SUBMENU_ACT":
+                                        skill_name = current_menu[menu_index]
+                                        skill_rules = SKILL_REGISTRY[skill_name]
+                                        if active_unit.mp >= skill_rules["mp_cost"]:
+                                            selected_skill = skill_name
+                                            valid_tiles = get_skill_targets(active_unit, skill_name)
+                                            game_state = "TARGET_SELECT"
+                                        else:
+                                            combat_log = f"Failed! Requires {skill_rules['mp_cost']} MP."
+
+                    elif game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
+                        hit_tile = screen_to_map(event.pos[0], event.pos[1], origin_x, origin_y)
+                        if hit_tile is not None:
+                            cursor_x, cursor_y = hit_tile
+                            if game_state == "MOVE_SELECT" and hit_tile in valid_tiles:
+                                active_unit.x, active_unit.y = hit_tile
+                                active_unit.has_moved = True
+                                current_menu = main_menu
+                                menu_index = 0
+                                game_state = "MENU"
+                            elif game_state == "TARGET_SELECT" and hit_tile in valid_tiles:
+                                target_unit = next((u for u in units if u.x == cursor_x and u.y == cursor_y and u.is_alive()), None)
+                                rules = SKILL_REGISTRY[selected_skill]
+                                active_unit.mp -= rules["mp_cost"]
+                                active_unit.tp += 20 if rules["mp_cost"] > 0 else 10
+                                if target_unit:
+                                    dmg = rules["damage"]
+                                    target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
+                                    if dmg >= 0:
+                                        combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name} for {dmg} damage!"
+                                    else:
+                                        combat_log = f"{active_unit.name} heals {target_unit.name} for {abs(dmg)} HP!"
+                                    if not target_unit.is_alive():
+                                        combat_log += f" {target_unit.name} was KO'd!"
+                                else:
+                                    combat_log = f"{active_unit.name} casted {selected_skill} but it missed the target field."
+                                active_unit.has_acted = True
+                                current_menu = main_menu
+                                menu_index = 2
+                                game_state = "MENU"
+
         # --- DRAW VISUAL LAYER PIPELINE ---
         screen.fill(BG_COLOR)
 
@@ -364,6 +507,11 @@ def main():
             pygame.draw.rect(screen, (20, 20, 30), (mx, my, 200, 180))
             pygame.draw.rect(screen, CURSOR_COLOR, (mx, my, 200, 180), 2)
             screen.blit(font.render(f"{active_unit.name} Actions", True, (255, 255, 255)), (mx + 10, my + 10))
+            
+            portrait = CHARACTER_PORTRAITS.get(active_unit.name)
+            if portrait:
+                screen.blit(portrait, (mx + 10, my + 120))
+                screen.blit(font.render(active_unit.name, True, (200, 200, 255)), (mx + 60, my + 126))
             
             for idx, opt in enumerate(current_menu):
                 if (opt == "Move" and active_unit.has_moved) or (opt == "Act" and active_unit.has_acted):
