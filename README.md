@@ -1,3 +1,5 @@
+## Tactics Slop engine in-game Image ##
+<img width="1585" height="930" alt="image" src="https://github.com/user-attachments/assets/f0894a3e-6624-46fd-9746-3391213d0480" />
 ## Controls ##
 
 "ASWD" to move.  
@@ -24,7 +26,7 @@ Mouse controls are supported.
 4. Undo Attacks and Moves.
 5. Animal Aspect System Design. (POE2 gems system)
 
-<img width="1585" height="930" alt="image" src="https://github.com/user-attachments/assets/f0894a3e-6624-46fd-9746-3391213d0480" />
+
 
 
 
