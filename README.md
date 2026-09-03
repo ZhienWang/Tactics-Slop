@@ -6,6 +6,16 @@ Z,X to zoom.
 H to hide menu.  
 Mouse controls are supported.
 
+## Installation ##
+
+1. Open Visual Studio Code and install Python extension.
+2. Install PIP on Terminal
+`python get-pip.py`
+3. Install Pyames
+`pip install pygame`
+4. Run fftr.py
+`python fftr.py`
+
 ## Current Goals: ##
 
 1. Add in AI art PNGs to make it more fun to test.
