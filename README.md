@@ -1,13 +1,9 @@
 ## Controls ##
 
-"ASWD" to move.
-
-Q,W to rotate.
-
-Z,X to zoom.
-
-H to hide menu.
-
+"ASWD" to move.  
+Q,W to rotate.  
+Z,X to zoom.  
+H to hide menu.  
 Mouse controls are supported.
 
 ## Current Goals:##
