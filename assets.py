@@ -66,6 +66,17 @@ def load_background_image(background_path, invalid_assets):
     return None
 
 
+def create_projectile_surface(color, size=16):
+    surf = pygame.Surface((size, size // 2), pygame.SRCALPHA)
+    body_color = color
+    tip_color = tuple(max(0, min(255, c + 70)) for c in color)
+    pygame.draw.rect(surf, body_color, (0, size // 4 - 1, size - 6, 3))
+    pygame.draw.polygon(surf, tip_color, [(size - 6, 0), (size - 1, size // 4), (size - 6, size // 2)])
+    pygame.draw.rect(surf, (0, 0, 0), (0, size // 4 - 1, size - 6, 3), 1)
+    pygame.draw.polygon(surf, (0, 0, 0), [(size - 6, 0), (size - 1, size // 4), (size - 6, size // 2)], 1)
+    return surf
+
+
 def cache_terrain_images(terrain_layout, invalid_assets):
     terrain_image_cache = {}
     for row in terrain_layout:

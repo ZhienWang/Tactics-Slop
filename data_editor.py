@@ -1,5 +1,6 @@
 import csv
 import io
+import random
 
 # --- 1. GENERATE DUMMY CSV DATA ---
 # This simulates exporting spreadsheets from Excel/Google Sheets
@@ -12,25 +13,68 @@ MAP_CSV_DUMMY = """0,0,1,1,0,0
 
 SKILLS_CSV_DUMMY = """skill_name,mp_cost,range,damage,type,r,g,b
 Attack,0,1,30,Physical,200,50,50
+Shoot,0,3,40,Physical,200,180,50
 Fire,10,3,50,Magic,255,100,50
 Blizzard,12,3,45,Magic,100,200,255
-Chakra,0,1,-40,Heal,100,255,100"""
+Chakra,0,1,-40,Heal,100,255,100
+Fish net,0,3,0,Status,255,255,255"""
 
 CHARACTERS_CSV_DUMMY = """name,team,class,x,y,speed,mv,jump,hp,mp,skills,r,g,b,portrait_path
 Ramza,Player,Knight,0,0,11,3,1,120,20,Attack|Chakra,50,120,240,
 Agrias,Player,Mage,0,1,10,2,2,100,40,Attack|Fire|Blizzard,100,160,255,
-Gafgarion,Enemy,Archer,5,4,12,3,1,140,10,Attack,220,60,60,
+Gafgarion,Enemy,Archer,5,4,12,3,1,140,10,Attack|Shoot,220,60,60,
 Knight B,Enemy,Knight,4,5,9,2,1,110,0,Attack,180,50,50,"""
 
-TERRAIN_CSV_DUMMY = """C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
+TERRAIN_CSV_DUMMY = """C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
 C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.png"""
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
+C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg"""
 
 GAME_SETTINGS_CSV_DUMMY = """setting_name,value
 background_path,"""
+
+DIALOGUES_CSV_DUMMY = """character,turn,text
+Jesus,1,"Welcome, friends. Our journey begins here."""
+
+TERRAIN_TILE_PATHS = [
+    "C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg",
+    "C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png",
+    "C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png",
+]
+
+
+def generate_terrain_csv(rows=6, cols=6, seed=None):
+    """Create a varied terrain grid while avoiding same-tile clusters."""
+    rng = random.Random(seed)
+    tile_count = rows * cols
+    tiles = (
+        [TERRAIN_TILE_PATHS[0]] * (tile_count // 2)
+        + [TERRAIN_TILE_PATHS[1]] * (tile_count // 4)
+        + [TERRAIN_TILE_PATHS[2]] * (tile_count - (tile_count // 2) - (tile_count // 4))
+    )
+    rng.shuffle(tiles)
+    grid = []
+
+    for y in range(rows):
+        grid.append([])
+        for x in range(cols):
+            choices = []
+            for index, tile in enumerate(tiles):
+                same_neighbors = 0
+                if x > 0 and grid[y][x - 1] == tile:
+                    same_neighbors += 1
+                if y > 0 and grid[y - 1][x] == tile:
+                    same_neighbors += 1
+                choices.append((same_neighbors, index, tile))
+            lowest_neighbor_count = min(choice[0] for choice in choices)
+            best_choices = [choice for choice in choices if choice[0] == lowest_neighbor_count]
+            _, selected_index, selected_tile = rng.choice(best_choices)
+            grid[y].append(selected_tile)
+            tiles.pop(selected_index)
+
+    return "\n".join(",".join(row) for row in grid)
 
 def generate_dummy_csv_files():
     """Writes the dummy text configurations to actual CSV files on disk."""
@@ -44,12 +88,15 @@ def generate_dummy_csv_files():
         f.write(CHARACTERS_CSV_DUMMY.strip())
 
     with open("terrain_layout.csv", "w", newline="") as f:
-        f.write(TERRAIN_CSV_DUMMY.strip())
+        f.write(generate_terrain_csv())
 
     with open("game_settings.csv", "w", newline="") as f:
         f.write(GAME_SETTINGS_CSV_DUMMY.strip())
 
-    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv, terrain_layout.csv, game_settings.csv")
+    with open("dialogues.csv", "w", newline="", encoding="utf-8") as f:
+        f.write(DIALOGUES_CSV_DUMMY.strip())
+
+    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv, terrain_layout.csv, game_settings.csv, dialogues.csv")
 
 
 # --- 2. THE CSV PARSING PIPELINE ---
@@ -92,6 +139,15 @@ def load_terrain_from_csv(filepath="terrain_layout.csv"):
     return terrain_grid
 
 
+def load_terrain_from_text(terrain_text):
+    """Parses a generated terrain CSV string into a terrain grid."""
+    return [
+        [cell.strip() for cell in row]
+        for row in csv.reader(io.StringIO(terrain_text))
+        if row
+    ]
+
+
 def load_settings_from_csv(filepath="game_settings.csv"):
     """Parses simple key/value game settings from CSV."""
     settings = {}
@@ -100,6 +156,18 @@ def load_settings_from_csv(filepath="game_settings.csv"):
         for row in reader:
             settings[row["setting_name"]] = row["value"]
     return settings
+
+
+def load_dialogues_from_csv(filepath="dialogues.csv"):
+    """Parses dialogue lines grouped by turn in CSV order."""
+    dialogues = {}
+    with open(filepath, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            turn = int(row["turn"])
+            line = (row["character"].strip(), row["text"].strip())
+            dialogues.setdefault(turn, []).append(line)
+    return dialogues
 
 
 def load_characters_from_csv(filepath="characters.csv"):
