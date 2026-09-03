@@ -13,3 +13,16 @@
 1. AI enemies
 2. Server
 3. Web-based Multiplayer
+
+## Project Structure: ##
+
+- `fftr.py`: root launcher
+- `scripts/`: Python game and test modules
+- `data/`: CSV game data
+- `assets/`: image and audio assets
+
+Run the game from the project root with:
+
+```text
+python fftr.py
+```

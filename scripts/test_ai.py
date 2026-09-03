@@ -1,5 +1,5 @@
-import game_logic
-from data_editor import load_dialogues_from_csv
+from scripts import game_logic
+from scripts.data_editor import load_dialogues_from_csv
 
 
 def make_unit(name, team, x, y, hp, mp, skills):

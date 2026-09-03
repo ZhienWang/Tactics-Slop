@@ -3,7 +3,7 @@ import sys
 import math
 import heapq
 import pygame
-from data_editor import (
+from scripts.data_editor import (
     generate_dummy_csv_files,
     load_map_from_csv,
     load_skills_from_csv,
@@ -14,7 +14,7 @@ from data_editor import (
     generate_terrain_csv,
     load_terrain_from_text,
 )
-from config import (
+from scripts.config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
     TILE_WIDTH,
@@ -24,14 +24,14 @@ from config import (
     CURSOR_COLOR,
     CLASS_SKILLSETS,
 )
-from assets import (
+from scripts.assets import (
     load_background_image,
     cache_terrain_images,
     build_character_portraits,
     draw_tile_texture,
     create_projectile_surface,
 )
-from controls import screen_to_map
+from scripts.controls import screen_to_map
 
 # --- RUNTIME DATA ---
 MAP_DATA = []
@@ -351,8 +351,9 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None):
 def main():
     global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
 
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     required_files = ["map_layout.csv", "skills.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
-    if not all(os.path.exists(filename) for filename in required_files):
+    if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
         generate_dummy_csv_files()
 
     invalid_assets = []
@@ -369,7 +370,7 @@ def main():
     font = pygame.font.SysFont(None, 22)
     music_ready = False
     try:
-        music_path = os.path.join(os.path.dirname(__file__), "assets", "bgmusic.mp3")
+        music_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bgmusic.mp3")
         pygame.mixer.music.load(music_path)
         pygame.mixer.music.set_volume(0.5)
         music_ready = True
@@ -386,6 +387,8 @@ def main():
         TERRAIN_LAYOUT = load_terrain_from_text(generate_terrain_csv(MAP_ROWS, MAP_COLS))
     settings = load_settings_from_csv()
     background_path = settings.get("background_path", "").strip()
+    if not background_path:
+        background_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bg.jpg")
 
     units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
     dialogues = load_dialogues_from_csv()
@@ -403,7 +406,7 @@ def main():
     cursor_x, cursor_y = 0, 0
     valid_tiles = []
     combat_log = "System Engine Initialized. Map loaded cleanly."
-    rotation = 0
+    rotation = 2
     map_zoom = 1.0
     active_projectile = None
     rotate_left_button = pygame.Rect(10, 205, 56, 32)
@@ -521,7 +524,7 @@ def main():
                         cursor_x, cursor_y = 0, 0
                         valid_tiles = []
                         combat_log = "Game restarted. Combat resumed."
-                        rotation = 0
+                        rotation = 2
                         active_projectile = None
                 elif event.type == pygame.KEYDOWN:
                     if event.key in [pygame.K_SPACE, pygame.K_RETURN]:
@@ -535,7 +538,7 @@ def main():
                         cursor_x, cursor_y = 0, 0
                         valid_tiles = []
                         combat_log = "Game restarted. Combat resumed."
-                        rotation = 0
+                        rotation = 2
                         active_projectile = None
                 continue
 
@@ -843,6 +846,9 @@ def main():
         # --- DRAW ---
         if background_image:
             screen.blit(background_image, (0, 0))
+            background_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            background_overlay.fill((0, 0, 0, 125))
+            screen.blit(background_overlay, (0, 0))
         else:
             screen.fill(BG_COLOR)
 

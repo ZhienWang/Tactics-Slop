@@ -1,6 +1,6 @@
 import os
 import pygame
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT
+from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT
 
 
 def load_image_safe(path, invalid_paths=None):
@@ -62,7 +62,13 @@ def load_background_image(background_path, invalid_assets):
         return None
     img = load_image_safe(background_path, invalid_assets)
     if img:
-        return pygame.transform.smoothscale(img, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        scale = min(SCREEN_WIDTH / img.get_width(), SCREEN_HEIGHT / img.get_height())
+        scaled_size = (round(img.get_width() * scale), round(img.get_height() * scale))
+        scaled_image = pygame.transform.smoothscale(img, scaled_size)
+        background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        background.fill((0, 0, 0))
+        background.blit(scaled_image, scaled_image.get_rect(center=background.get_rect().center))
+        return background
     return None
 
 

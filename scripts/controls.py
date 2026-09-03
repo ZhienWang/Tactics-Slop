@@ -1,4 +1,4 @@
-from config import TILE_WIDTH, TILE_HEIGHT
+from scripts.config import TILE_WIDTH, TILE_HEIGHT
 
 
 def point_in_polygon(point, polygon):

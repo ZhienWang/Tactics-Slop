@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Test script to verify enemy healer functionality."""
 
-from data_editor import load_characters_from_csv, load_skills_from_csv
-from game_logic import Unit, choose_ai_action, SKILL_REGISTRY
+from scripts.data_editor import load_characters_from_csv, load_skills_from_csv
+from scripts.game_logic import Unit, choose_ai_action, SKILL_REGISTRY
 
 # Load data
 SKILL_REGISTRY.clear()
