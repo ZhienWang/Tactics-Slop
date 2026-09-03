@@ -6,7 +6,7 @@ Z,X to zoom.
 H to hide menu.  
 Mouse controls are supported.
 
-## Current Goals:##
+## Current Goals: ##
 
 1. Add in AI art PNGs to make it more fun to test.
 2. Add more abilities for testing.
