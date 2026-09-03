@@ -22,15 +22,14 @@ Mouse controls are supported.
 
 1. Add in AI art PNGs to make it more fun to test.
 2. Add more abilities for testing.
+6. Undo Attacks and Moves.
 3. Character Roster Menu.
-4. Undo Attacks and Moves.
-5. Animal Aspect System Design. (POE2 gems system)
-
-
-
+4. World Map system
+5. Random Battles
+6. Animal Aspect System Design. (POE2 gems system)
 
 
 ## Future Goals: ##
-1. AI enemies
+1. Itch.IO play test release
 2. Server
 3. Web-based Multiplayer
