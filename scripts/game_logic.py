@@ -53,8 +53,6 @@ class Unit:
         self.speed = data["speed"]
         self.mv = data["mv"]
         self.jump = data["jump"]
-        self.max_hp = data["hp"]
-        self.hp = data["hp"]
         self.max_mp = data["mp"]
         self.mp = data["mp"]
         self.skills = data["skills"]
@@ -67,8 +65,7 @@ class Unit:
         self.has_acted = False
         self.snared_turns = 0
         self.disabled = False
-        self.physical_attack = data.get("physical_attack", 25)
-        self.physical_defense = data.get("physical_defense", 25)
+        self.removed = False
         self.magic_attack = data.get("magic_attack", 25)
         self.magic_defense = data.get("magic_defense", 25)
         self.faith = data.get("faith", 25)
@@ -77,7 +74,7 @@ class Unit:
         self.love = data.get("love", 25)
 
     def is_alive(self):
-        return self.hp > 0
+        return not self.removed
 
 
 def unit_is_in_water(unit):
@@ -277,7 +274,7 @@ def choose_ai_action(unit, units_list):
 
         if skill_data["type"] == "Heal":
             for ally in allies:
-                if ally == unit or ally.hp >= ally.max_hp:
+                if ally == unit or ally.faith >= 100:
                     continue
                 distance = abs(unit.x - ally.x) + abs(unit.y - ally.y)
                 if distance > skill_data["range"]:
@@ -286,7 +283,7 @@ def choose_ai_action(unit, units_list):
                     "action": "skill",
                     "skill": skill_name,
                     "target": ally,
-                    "priority": (ally.hp, distance),
+                    "priority": (ally.faith, distance),
                 }
                 if best_choice is None or candidate["priority"] < best_choice["priority"]:
                     best_choice = candidate
@@ -302,7 +299,7 @@ def choose_ai_action(unit, units_list):
                 "action": "skill",
                 "skill": skill_name,
                 "target": enemy,
-                "priority": (enemy.hp, -skill_data["damage"], distance),
+                "priority": (-enemy.faith, -skill_data["damage"], distance),
             }
             if best_choice is None or candidate["priority"] < best_choice["priority"]:
                 best_choice = candidate
@@ -317,12 +314,12 @@ def choose_ai_action(unit, units_list):
 
 def get_ai_move_destination(unit, units_list):
     allies = [u for u in units_list if u.is_alive() and u.team == unit.team]
-    injured_allies = [u for u in allies if u.hp < u.max_hp and u != unit]
+    injured_allies = [u for u in allies if u.faith < 100 and u != unit]
     enemies = [u for u in units_list if u.is_alive() and u.team != unit.team]
     if injured_allies and any(skill_name for skill_name in unit.skills if SKILL_REGISTRY.get(skill_name, {}).get("type") == "Heal"):
-        target = min(injured_allies, key=lambda u: (u.hp, abs(unit.x - u.x) + abs(unit.y - u.y)))
+        target = min(injured_allies, key=lambda u: (u.faith, abs(unit.x - u.x) + abs(unit.y - u.y)))
     elif enemies:
-        target = min(enemies, key=lambda u: (abs(unit.x - u.x) + abs(unit.y - u.y), u.hp))
+        target = min(enemies, key=lambda u: (abs(unit.x - u.x) + abs(unit.y - u.y), -u.faith))
     else:
         return None
 
@@ -612,19 +609,26 @@ def main(stage=None):
                             active_unit.ct = 0
                             game_state = "AI_PAUSE"
                             ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
-                        else:
-                            dmg = rules["damage"]
-                            target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
-                            if rules["type"] != "Heal" and attack_sound:
+                        elif rules["type"] == "Heal":
+                            combat_log = apply_preach(active_unit, target_unit, abs(rules["damage"]))
+                            active_unit.has_acted = True
+                            active_unit.ct = 0
+                            game_state = "AI_PAUSE"
+                            ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
+                        elif rules["type"] == "Physical":
+                            target_unit.removed = True
+                            if attack_sound:
                                 attack_sound.play()
-                            if dmg >= 0:
-                                combat_log = f"{active_unit.name} uses {ai_choice['skill']} on {target_unit.name} for {dmg} damage!"
-                            else:
-                                combat_log = f"{active_unit.name} heals {target_unit.name} for {abs(dmg)} HP!"
-                            if not target_unit.is_alive():
-                                combat_log += f" {target_unit.name} was KO'd!"
+                            combat_log = f"{active_unit.name} strikes down {target_unit.name} with {ai_choice['skill']}!"
+                            active_unit.has_acted = True
+                            active_unit.ct = 0
+                            game_state = "AI_PAUSE"
+                            ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
+                        else:
                             if apply_skill_status(ai_choice["skill"], target_unit):
                                 combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                            else:
+                                combat_log = f"{active_unit.name} uses {ai_choice['skill']} on {target_unit.name}."
                             active_unit.has_acted = True
                             active_unit.ct = 0
                             game_state = "AI_PAUSE"
@@ -805,19 +809,18 @@ def main(stage=None):
                                 else:
                                     if target_unit and rules["type"] == "Faith":
                                         combat_log = apply_preach(active_unit, target_unit, rules["damage"])
-                                    elif target_unit:
-                                        dmg = rules["damage"]
-                                        target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
-                                        if rules["type"] != "Heal" and attack_sound:
+                                    elif target_unit and rules["type"] == "Heal":
+                                        combat_log = apply_preach(active_unit, target_unit, abs(rules["damage"]))
+                                    elif target_unit and rules["type"] == "Physical":
+                                        target_unit.removed = True
+                                        if attack_sound:
                                             attack_sound.play()
-                                        if dmg >= 0:
-                                            combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name} for {dmg} damage!"
-                                        else:
-                                            combat_log = f"{active_unit.name} heals {target_unit.name} for {abs(dmg)} HP!"
-                                        if not target_unit.is_alive():
-                                            combat_log += f" {target_unit.name} was KO'd!"
+                                        combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
+                                    elif target_unit:
                                         if apply_skill_status(selected_skill, target_unit):
                                             combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                                        else:
+                                            combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name}."
                                     else:
                                         combat_log = f"{active_unit.name} casted {selected_skill} but it missed the target field."
                                     active_unit.has_acted = True
@@ -967,19 +970,18 @@ def main(stage=None):
                             else:
                                 if target_unit and rules["type"] == "Faith":
                                     combat_log = apply_preach(active_unit, target_unit, rules["damage"])
-                                elif target_unit:
-                                    dmg = rules["damage"]
-                                    target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
-                                    if rules["type"] != "Heal" and attack_sound:
+                                elif target_unit and rules["type"] == "Heal":
+                                    combat_log = apply_preach(active_unit, target_unit, abs(rules["damage"]))
+                                elif target_unit and rules["type"] == "Physical":
+                                    target_unit.removed = True
+                                    if attack_sound:
                                         attack_sound.play()
-                                    if dmg >= 0:
-                                        combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name} for {dmg} damage!"
-                                    else:
-                                        combat_log = f"{active_unit.name} heals {target_unit.name} for {abs(dmg)} HP!"
-                                    if not target_unit.is_alive():
-                                        combat_log += f" {target_unit.name} was KO'd!"
+                                    combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
+                                elif target_unit:
                                     if apply_skill_status(selected_skill, target_unit):
                                         combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                                    else:
+                                        combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name}."
                                 else:
                                     combat_log = f"{active_unit.name} casted {selected_skill} but it missed the target field."
                                 active_unit.has_acted = True
@@ -997,14 +999,8 @@ def main(stage=None):
             if active_projectile["progress"] >= 1.0:
                 target_unit = active_projectile["target"]
                 if target_unit and target_unit.is_alive():
-                    dmg = active_projectile["damage"]
-                    target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
-                    if dmg >= 0:
-                        combat_log = f"{active_projectile['attacker'].name} hits {target_unit.name} for {dmg} damage!"
-                    else:
-                        combat_log = f"{active_projectile['attacker'].name} heals {target_unit.name} for {abs(dmg)} HP!"
-                    if not target_unit.is_alive():
-                        combat_log += f" {target_unit.name} was KO'd!"
+                    target_unit.removed = True
+                    combat_log = f"{active_projectile['attacker'].name}'s {active_projectile['skill']} strikes down {target_unit.name}!"
                 else:
                     combat_log = f"{active_projectile['attacker'].name}'s arrow fell short."
                 active_projectile["attacker"].has_acted = True
@@ -1083,7 +1079,7 @@ def main(stage=None):
                 if actual_idx < len(living_queue):
                     u = living_queue[actual_idx]
                     col = (100, 180, 255) if u.team == "Player" else (255, 110, 110)
-                    row_text = f"{u.name:9} HP:{u.hp:3}/{u.max_hp} MP:{u.mp:2} CT:{u.ct}"
+                    row_text = f"{u.name:9} Faith:{round(u.faith):3} MP:{u.mp:2} CT:{u.ct}"
                     if u == active_unit: row_text += " *"
                     screen.blit(font.render(row_text, True, col), (20, 45 + (display_idx * 24)))
 

@@ -1,16 +1,16 @@
-name,team,class,x,y,speed,mv,jump,hp,mp,skills,r,g,b,portrait_path,physical_attack,physical_defense,magic_attack,magic_defense,faith,bravery,patience,love
-Jesus,Player,Prophet,1,1,15,4,2,200,100,Preach|Heal|Resurrection,255,200,0,assets/jesus_christ.png,31,12,25,6,29,24,3,20
-Peter,Player,Apostle,0,0,12,3,1,140,20,Preach|Chakra|Fish net,50,120,240,assets/simon_peter.png,17,18,10,28,22,6,32,25
-Andrew,Player,Apostle,2,0,11,3,1,130,15,Preach|Defend|Fish net,70,140,255,assets/andrew.png,14,13,38,48,50,40,33,21
-James,Player,Apostle,1,0,13,3,1,150,10,Preach|Slash,60,130,240,assets/james_the_greater.png,17,33,12,16,18,41,26,45
-John,Player,Apostle,3,0,11,3,1,120,50,Preach|Heal|Fire,80,150,255,assets/john.png,24,16,31,26,13,19,13,34
-Philip,Player,Apostle,0,2,10,2,1,110,30,Preach|Chakra,50,120,240,assets/philip.png,30,46,32,27,38,20,36,31
-Bartholomew,Player,Apostle,2,2,11,3,1,135,0,Preach,60,130,240,assets/bartholomew.png,18,22,14,20,28,30,24,30
-Matthew,Player,Apostle,1,2,10,2,1,115,25,Preach|Blizzard,50,120,240,assets/matthew.png,38,38,38,32,20,41,32,28
-Thomas,Player,Apostle,3,2,12,3,1,125,0,Preach,60,130,240,assets/thomas.png,15,26,22,14,32,16,25,27
-James Minor,Player,Apostle,0,1,11,3,1,130,0,Preach,50,120,240,assets/james_the_lesser.png,25,25,15,20,19,29,32,25
-Thaddeus,Player,Apostle,2,3,10,2,1,115,20,Preach|Chakra,50,120,240,assets/jude_thaddeus.png,20,33,36,36,30,30,36,31
-Simon,Player,Apostle,3,1,11,3,1,140,0,Preach|Slash,60,130,240,assets/simon_the_zealot.png,32,23,8,14,27,16,19,4
-Legionnaire 1,Enemy,Soldier,7,7,11,3,1,120,0,Preach,200,50,50,assets/legionaire.png,26,30,16,20,0,22,19,20
-Legionnaire 2,Enemy,Soldier,8,7,11,3,1,120,0,Preach,200,50,50,assets/legionaire.png,24,29,20,24,0,25,21,16
-Legionnaire 3,Enemy,Soldier,7,8,11,3,1,120,0,Preach,200,50,50,assets/legionaire.png,28,26,14,18,0,28,15,24
+name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,magic_attack,magic_defense,faith,bravery,patience,love
+Jesus,Player,Prophet,1,1,15,4,2,100,Preach|Heal|Resurrection,255,200,0,assets/jesus_christ.png,25,6,129,24,3,20
+Peter,Player,Apostle,0,0,12,3,1,20,Preach|Chakra|Fish net,50,120,240,assets/simon_peter.png,10,28,122,6,32,25
+Andrew,Player,Apostle,2,0,11,3,1,15,Preach|Defend|Fish net,70,140,255,assets/andrew.png,38,48,150,40,33,21
+James,Player,Apostle,1,0,13,3,1,10,Preach|Slash,60,130,240,assets/james_the_greater.png,12,16,118,41,26,45
+John,Player,Apostle,3,0,11,3,1,50,Preach|Heal,80,150,255,assets/john.png,31,26,113,19,13,34
+Philip,Player,Apostle,0,2,10,2,1,30,Preach|Chakra,50,120,240,assets/philip.png,32,27,138,20,36,31
+Bartholomew,Player,Apostle,2,2,11,3,1,0,Preach,60,130,240,assets/bartholomew.png,14,20,128,30,24,30
+Matthew,Player,Apostle,1,2,10,2,1,25,Preach,50,120,240,assets/matthew.png,38,32,120,41,32,28
+Thomas,Player,Apostle,3,2,12,3,1,0,Preach,60,130,240,assets/thomas.png,22,14,132,16,25,27
+James Minor,Player,Apostle,0,1,11,3,1,0,Preach,50,120,240,assets/james_the_lesser.png,15,20,119,29,32,25
+Thaddeus,Player,Apostle,2,3,10,2,1,20,Preach|Chakra,50,120,240,assets/jude_thaddeus.png,36,36,130,30,36,31
+Simon,Player,Apostle,3,1,11,3,1,0,Preach|Slash,60,130,240,assets/simon_the_zealot.png,8,14,127,16,19,4
+Legionnaire 1,Enemy,Soldier,7,7,11,3,1,0,Preach,200,50,50,assets/legionaire.png,16,20,100,22,19,20
+Legionnaire 2,Enemy,Soldier,8,7,11,3,1,0,Preach,200,50,50,assets/legionaire.png,20,24,100,25,21,16
+Legionnaire 3,Enemy,Soldier,7,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,14,18,100,28,15,24

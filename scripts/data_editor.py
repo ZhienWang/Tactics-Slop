@@ -22,11 +22,11 @@ Blizzard,12,3,45,Magic,100,200,255
 Chakra,0,1,-40,Heal,100,255,100
 Fish net,0,3,0,Status,255,255,255"""
 
-CHARACTERS_CSV_DUMMY = """name,team,class,x,y,speed,mv,jump,hp,mp,skills,r,g,b,portrait_path
-Ramza,Player,Knight,0,0,11,3,1,120,20,Attack|Chakra,50,120,240,
-Agrias,Player,Mage,0,1,10,2,2,100,40,Attack|Fire|Blizzard,100,160,255,
-Gafgarion,Enemy,Archer,5,4,12,3,1,140,10,Attack|Shoot,220,60,60,
-Knight B,Enemy,Knight,4,5,9,2,1,110,0,Attack,180,50,50,"""
+CHARACTERS_CSV_DUMMY = """name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path
+Ramza,Player,Knight,0,0,11,3,1,20,Attack|Chakra,50,120,240,
+Agrias,Player,Mage,0,1,10,2,2,40,Attack|Fire|Blizzard,100,160,255,
+Gafgarion,Enemy,Archer,5,4,12,3,1,10,Attack|Shoot,220,60,60,
+Knight B,Enemy,Knight,4,5,9,2,1,0,Attack,180,50,50,"""
 
 GAME_SETTINGS_CSV_DUMMY = """setting_name,value
 background_path,"""
@@ -258,7 +258,6 @@ def load_characters_from_csv(filepath=None):
                 "speed": int(row["speed"]),
                 "mv": int(row["mv"]),
                 "jump": int(row["jump"]),
-                "hp": int(row["hp"]),
                 "mp": int(row["mp"]),
                 # Split the pipe-delimited string back into a real Python list
                 "skills": row["skills"].split("|") if row["skills"] else [],
@@ -266,7 +265,7 @@ def load_characters_from_csv(filepath=None):
                 "portrait_path": row.get("portrait_path", "").strip()
             }
             for attribute in [
-                "physical_attack", "physical_defense", "magic_attack", "magic_defense",
+                "magic_attack", "magic_defense",
                 "faith", "bravery", "patience", "love",
             ]:
                 char_data[attribute] = int(row[attribute])

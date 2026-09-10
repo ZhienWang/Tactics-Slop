@@ -115,30 +115,45 @@ def draw_hint_bar(surface, font, text):
     surface.blit(font.render(text, True, TEXT_MAIN), (16, panel.y + 10))
 
 
-def draw_command_menu(surface, font, options, index, title):
+def command_menu_layout(options):
     width, height = 220, 60 + len(options) * 30
     mx, my = SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT // 2 - height // 2
-    pygame.draw.rect(surface, PANEL_BG, (mx, my, width, height))
-    pygame.draw.rect(surface, PANEL_BORDER, (mx, my, width, height), 2)
-    surface.blit(font.render(title, True, PANEL_BORDER), (mx + 14, my + 12))
-    for idx, opt in enumerate(options):
+    panel_rect = pygame.Rect(mx, my, width, height)
+    option_rects = [pygame.Rect(mx + 10, my + 46 + idx * 30, width - 20, 26) for idx in range(len(options))]
+    return panel_rect, option_rects
+
+
+def draw_command_menu(surface, font, options, index, title):
+    panel_rect, option_rects = command_menu_layout(options)
+    pygame.draw.rect(surface, PANEL_BG, panel_rect)
+    pygame.draw.rect(surface, PANEL_BORDER, panel_rect, 2)
+    surface.blit(font.render(title, True, PANEL_BORDER), (panel_rect.x + 14, panel_rect.y + 12))
+    for idx, (opt, rect) in enumerate(zip(options, option_rects)):
         color = PANEL_BORDER if idx == index else TEXT_MAIN
         pointer = " -> " if idx == index else "    "
-        surface.blit(font.render(f"{pointer}{opt}", True, color), (mx + 10, my + 46 + idx * 30))
+        surface.blit(font.render(f"{pointer}{opt}", True, color), (rect.x, rect.y))
+
+
+def unit_list_layout(units):
+    width, height = 460, 60 + len(units) * 46
+    mx, my = SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT // 2 - height // 2
+    panel_rect = pygame.Rect(mx, my, width, height)
+    row_rects = [pygame.Rect(mx + 6, my + 46 + idx * 46 - 4, width - 12, 40) for idx in range(len(units))]
+    return panel_rect, row_rects
 
 
 def draw_unit_list(surface, font, units, portraits, index):
-    width, height = 460, 60 + len(units) * 46
-    mx, my = SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT // 2 - height // 2
-    pygame.draw.rect(surface, PANEL_BG, (mx, my, width, height))
-    pygame.draw.rect(surface, PANEL_BORDER, (mx, my, width, height), 2)
+    panel_rect, row_rects = unit_list_layout(units)
+    mx, my, width = panel_rect.x, panel_rect.y, panel_rect.width
+    pygame.draw.rect(surface, PANEL_BG, panel_rect)
+    pygame.draw.rect(surface, PANEL_BORDER, panel_rect, 2)
     surface.blit(font.render("UNIT", True, PANEL_BORDER), (mx + 14, my + 12))
 
     for idx, unit in enumerate(units):
         row_y = my + 46 + idx * 46
         selected = idx == index
         if selected:
-            pygame.draw.rect(surface, (35, 35, 55), (mx + 6, row_y - 4, width - 12, 40))
+            pygame.draw.rect(surface, (35, 35, 55), row_rects[idx])
         portrait = portraits.get(unit.name)
         if portrait:
             thumb = pygame.transform.smoothscale(portrait, (56, 28))
@@ -147,8 +162,8 @@ def draw_unit_list(surface, font, units, portraits, index):
         pointer = "->" if selected else "  "
         surface.blit(font.render(f"{pointer} {unit.name}", True, name_color), (mx + 80, row_y))
         surface.blit(font.render(unit.char_class, True, TEXT_DIM), (mx + 80, row_y + 18))
-        hp_text = f"HP {unit.hp:3}/{unit.max_hp}   MP {unit.mp:2}/{unit.max_mp}"
-        surface.blit(font.render(hp_text, True, TEAM_COLOR), (mx + 260, row_y + 6))
+        stats_text = f"Faith {round(unit.faith):3}/100   MP {unit.mp:2}/{unit.max_mp}"
+        surface.blit(font.render(stats_text, True, TEAM_COLOR), (mx + 260, row_y + 6))
 
 
 def draw_unit_detail(surface, font, unit, portraits):
@@ -165,21 +180,20 @@ def draw_unit_detail(surface, font, unit, portraits):
 
     surface.blit(font.render(unit.name, True, PANEL_BORDER), (mx + 16, my + 12))
     surface.blit(font.render(unit.char_class, True, TEXT_DIM), (mx + 170, my + 62))
-    surface.blit(font.render(f"HP  {unit.hp:3} / {unit.max_hp}", True, (120, 220, 120)), (mx + 170, my + 84))
+    surface.blit(font.render(f"Faith  {round(unit.faith):3} / 100", True, (255, 215, 0)), (mx + 170, my + 84))
     surface.blit(font.render(f"MP  {unit.mp:3} / {unit.max_mp}", True, (120, 170, 240)), (mx + 170, my + 104))
 
     pygame.draw.line(surface, (70, 70, 85), (mx + 16, my + 150), (mx + width - 16, my + 150), 1)
 
     stat_rows = [
-        ("Physical Attack", unit.physical_attack), ("Physical Defense", unit.physical_defense),
         ("Magic Attack", unit.magic_attack), ("Magic Defense", unit.magic_defense),
-        ("Faith", unit.faith), ("Bravery", unit.bravery),
-        ("Patience", unit.patience), ("Love", unit.love),
+        ("Bravery", unit.bravery), ("Patience", unit.patience),
+        ("Love", unit.love),
     ]
     col_x = [mx + 16, mx + 270]
     for idx, (label, value) in enumerate(stat_rows):
-        col = idx // 4
-        row = idx % 4
+        col = idx // 3
+        row = idx % 3
         y = my + 172 + row * 26
         surface.blit(font.render(f"{label:16}", True, TEXT_DIM), (col_x[col], y))
         surface.blit(font.render(f"{value}", True, TEXT_MAIN), (col_x[col] + 190, y))
@@ -262,6 +276,34 @@ def main():
                         transition_to = clicked_node
                         transition_progress = 0.0
                         state = STATE_TRANSITION
+
+                elif state == STATE_MENU:
+                    panel_rect, option_rects = command_menu_layout(MENU_OPTIONS)
+                    clicked = next((idx for idx, rect in enumerate(option_rects) if rect.collidepoint(event.pos)), None)
+                    if clicked is not None:
+                        menu_index = clicked
+                        choice = MENU_OPTIONS[clicked]
+                        if choice == "Unit":
+                            state = STATE_UNIT_LIST
+                            unit_index = 0
+                        elif choice == "Close":
+                            state = STATE_MAP
+                    elif not panel_rect.collidepoint(event.pos):
+                        state = STATE_MAP
+
+                elif state == STATE_UNIT_LIST:
+                    panel_rect, row_rects = unit_list_layout(units)
+                    clicked = next((idx for idx, rect in enumerate(row_rects) if rect.collidepoint(event.pos)), None)
+                    if clicked is not None:
+                        unit_index = clicked
+                        selected_unit = units[clicked]
+                        state = STATE_UNIT_DETAIL
+                    elif not panel_rect.collidepoint(event.pos):
+                        state = STATE_MENU
+                        menu_index = 0
+
+                elif state == STATE_UNIT_DETAIL:
+                    state = STATE_UNIT_LIST
 
             elif event.type == pygame.KEYDOWN:
                 if state == STATE_MAP:

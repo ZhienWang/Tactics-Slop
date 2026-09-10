@@ -1,8 +1,6 @@
 skill_name,mp_cost,range,damage,type,r,g,b
 Preach,0,1,30,Faith,255,215,0
 Shoot,0,3,40,Physical,200,180,50
-Fire,10,3,50,Magic,255,100,50
-Blizzard,12,3,45,Magic,100,200,255
 First Aid,0,1,-40,Heal,100,255,100
 Heal,15,2,-60,Heal,100,255,100
 Resurrection,50,3,-100,Heal,255,200,0

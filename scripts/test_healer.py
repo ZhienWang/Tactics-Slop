@@ -19,7 +19,7 @@ units = [Unit(char_data) for char_data in character_roster]
 
 print("\n=== Unit Test ===")
 for u in units:
-    print(f"{u.name:15} Team: {u.team:8} HP: {u.hp}/{u.max_hp} MP: {u.mp}/{u.max_mp}")
+    print(f"{u.name:15} Team: {u.team:8} Faith: {u.faith}/100 MP: {u.mp}/{u.max_mp}")
 
 # Test AI healing logic
 print("\n=== Testing Enemy Healer AI ===")
@@ -30,8 +30,8 @@ if meliadoul:
     # Damage Knight B to test healing
     knight_b = next((u for u in units if u.name == "Knight B"), None)
     if knight_b:
-        knight_b.hp = 50  # Damage the knight
-        print(f"Damaged Knight B: HP now {knight_b.hp}/{knight_b.max_hp}")
+        knight_b.faith = 50  # Lower the knight's faith
+        print(f"Lowered Knight B: Faith now {knight_b.faith}/100")
         
         # Test AI action
         ai_action = choose_ai_action(meliadoul, units)
@@ -39,7 +39,7 @@ if meliadoul:
         
         if ai_action["action"] == "skill" and ai_action["skill"] == "Chakra":
             print("✓ Healer correctly identified Knight B as target")
-            print(f"  Will heal {ai_action['target'].name} (HP: {ai_action['target'].hp})")
+            print(f"  Will heal {ai_action['target'].name} (Faith: {ai_action['target'].faith})")
         else:
             print("✗ Healer did not choose healing action")
 else:
