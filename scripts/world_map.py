@@ -5,15 +5,16 @@ import asyncio
 import pygame
 
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, CURSOR_COLOR, FAITH_CAP
-from scripts.data_editor import generate_dummy_csv_files, load_characters_from_csv, load_stage_manifest
+from scripts.data_editor import generate_dummy_csv_files, load_characters_from_csv, load_stage_manifest, load_world_map_nodes
 from scripts.assets import build_character_portraits, load_image_safe, bring_window_to_front
 from scripts.game_logic import Unit, main as run_battle
 
 # --- WORLD MAP DATA ---
-# A small, mostly-linear route (one branch that reunites) in the spirit of the
-# Super Mario World overworld: from any node you can only travel to a node
-# that is directly connected to it, one hop at a time.
-NODES = {
+# Node layout (screen position, type, which nodes connect to which) lives in
+# data/world_map_nodes.csv so it can be tuned without touching code. Falls
+# back to this hardcoded route (a small, mostly-linear path in the spirit of
+# the Super Mario World overworld) if that file is ever missing/malformed.
+_FALLBACK_NODES = {
     "galilee":   {"pos": (352, 320),  "name": "Sea of Galilee", "type": "stage", "connections": ["capernaum"]},
     "capernaum": {"pos": (273, 570),  "name": "Capernaum",      "type": "town",  "connections": ["galilee", "cana"]},
     "cana":      {"pos": (609, 500),  "name": "Cana",           "type": "stage", "connections": ["capernaum", "nazareth", "samaria"]},
@@ -23,7 +24,12 @@ NODES = {
     "bethany":   {"pos": (1266, 563), "name": "Bethany",        "type": "stage", "connections": ["jericho", "jerusalem"]},
     "jerusalem": {"pos": (1406, 258), "name": "Jerusalem",      "type": "stage", "connections": ["bethany"]},
 }
-START_NODE = "galilee"
+try:
+    NODES, START_NODE = load_world_map_nodes()
+    if not NODES:
+        raise ValueError("world_map_nodes.csv produced no nodes")
+except (OSError, ValueError, KeyError):
+    NODES, START_NODE = _FALLBACK_NODES, "galilee"
 NODE_CLICK_RADIUS = 26
 
 STATE_MAP = "MAP"

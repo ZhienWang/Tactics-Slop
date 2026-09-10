@@ -275,6 +275,30 @@ def load_stage_manifest(filepath=None):
     return stages
 
 
+def load_world_map_nodes(filepath=None):
+    """Parses the world map's node layout (screen position, type, and which
+    other nodes it connects to). Returns (nodes, start_node_id)."""
+    filepath = filepath or os.path.join(DATA_DIR, "world_map_nodes.csv")
+    nodes = {}
+    start_node_id = None
+    with open(filepath, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            node_id = row["node_id"].strip()
+            connections = [c.strip() for c in row["connections"].split("|") if c.strip()]
+            nodes[node_id] = {
+                "pos": (int(row["x"]), int(row["y"])),
+                "name": row["name"].strip(),
+                "type": row["type"].strip(),
+                "connections": connections,
+            }
+            if row.get("start", "").strip() == "1":
+                start_node_id = node_id
+    if start_node_id is None and nodes:
+        start_node_id = next(iter(nodes))
+    return nodes, start_node_id
+
+
 def load_characters_from_csv(filepath=None):
     """Parses character stats and handles delimited skill lists."""
     character_list = []

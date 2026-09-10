@@ -14,6 +14,7 @@ from scripts.data_editor import (
     generate_terrain_csv,
     generate_map_csv,
     load_characters_from_csv,
+    load_world_map_nodes,
     TERRAIN_THEMES,
     STAGE_THEMES,
     TERRAIN_TILE_WEIGHTS,
@@ -198,3 +199,42 @@ def test_no_two_characters_share_a_starting_tile_on_the_same_stage():
                 f"{char['name']} and {seen.get(pos)} both start at {pos} in {path}"
             )
             seen[pos] = char["name"]
+
+
+# --- World map node layout (data/world_map_nodes.csv) ---
+
+def test_world_map_nodes_load_with_a_valid_start_node():
+    nodes, start_node = load_world_map_nodes()
+
+    assert nodes, "expected at least one node"
+    assert start_node in nodes, f"start node {start_node!r} isn't a node in the file"
+
+
+def test_world_map_every_connection_points_to_a_real_node():
+    nodes, _ = load_world_map_nodes()
+
+    for node_id, node in nodes.items():
+        for target in node["connections"]:
+            assert target in nodes, f"{node_id} connects to unknown node {target!r}"
+
+
+def test_world_map_connections_are_symmetric():
+    # The travel UI lets you go both ways along a drawn path, so a one-way
+    # connection would be a dead end you can walk into but never leave.
+    nodes, _ = load_world_map_nodes()
+
+    for node_id, node in nodes.items():
+        for target in node["connections"]:
+            assert node_id in nodes[target]["connections"], (
+                f"{node_id} -> {target} isn't reciprocated ({target} doesn't list {node_id})"
+            )
+
+
+def test_world_map_node_positions_fit_on_screen():
+    from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT
+
+    nodes, _ = load_world_map_nodes()
+    for node_id, node in nodes.items():
+        x, y = node["pos"]
+        assert 0 <= x <= SCREEN_WIDTH, f"{node_id} has x={x}, outside [0, {SCREEN_WIDTH}]"
+        assert 0 <= y <= SCREEN_HEIGHT, f"{node_id} has y={y}, outside [0, {SCREEN_HEIGHT}]"
