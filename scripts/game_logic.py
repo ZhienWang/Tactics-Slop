@@ -13,6 +13,7 @@ from scripts.data_editor import (
     load_characters_from_csv,
     generate_terrain_csv,
     load_terrain_from_text,
+    is_water_tile,
 )
 from scripts.config import (
     SCREEN_WIDTH,
@@ -30,6 +31,7 @@ from scripts.assets import (
     build_character_portraits,
     draw_tile_texture,
     create_projectile_surface,
+    bring_window_to_front,
 )
 from scripts.controls import screen_to_map
 
@@ -64,6 +66,7 @@ class Unit:
         self.has_moved = False
         self.has_acted = False
         self.snared_turns = 0
+        self.disabled = False
         self.physical_attack = data.get("physical_attack", 25)
         self.physical_defense = data.get("physical_defense", 25)
         self.magic_attack = data.get("magic_attack", 25)
@@ -77,7 +80,14 @@ class Unit:
         return self.hp > 0
 
 
+def unit_is_in_water(unit):
+    if 0 <= unit.y < len(TERRAIN_LAYOUT) and 0 <= unit.x < len(TERRAIN_LAYOUT[unit.y]):
+        return is_water_tile(TERRAIN_LAYOUT[unit.y][unit.x])
+    return False
+
+
 def get_valid_moves_a_star(unit, units_list):
+    effective_mv = max(0, unit.mv - 1) if unit_is_in_water(unit) else unit.mv
     start_pos = (unit.x, unit.y)
     open_set = [(0, unit.x, unit.y)]
     g_score = {start_pos: 0}
@@ -86,7 +96,7 @@ def get_valid_moves_a_star(unit, units_list):
 
     while open_set:
         cost, cx, cy = heapq.heappop(open_set)
-        if cost > unit.mv:
+        if cost > effective_mv:
             continue
         if (cx, cy) not in valid_tiles:
             valid_tiles.append((cx, cy))
@@ -99,7 +109,7 @@ def get_valid_moves_a_star(unit, units_list):
                 target_z = MAP_DATA[ny][nx]
                 if abs(current_z - target_z) <= unit.jump:
                     tentative_g = g_score[(cx, cy)] + 1
-                    if tentative_g <= unit.mv and (tentative_g < g_score.get((nx, ny), float('inf'))):
+                    if tentative_g <= effective_mv and (tentative_g < g_score.get((nx, ny), float('inf'))):
                         g_score[(nx, ny)] = tentative_g
                         heapq.heappush(open_set, (tentative_g, nx, ny))
     return valid_tiles
@@ -136,6 +146,16 @@ def apply_skill_status(skill_name, target):
         target.snared_turns = 2
         return True
     return False
+
+
+def apply_preach(preacher, target, amount):
+    target.faith = max(0, min(100, target.faith + amount))
+    if target.faith >= 100 and target.team != "Player":
+        target.team = "Player"
+        target.color = (70, 140, 255)
+        target.disabled = True
+        return f"{target.name}'s faith is complete! They lay down their arms and join the Player team."
+    return f"{preacher.name} preaches to {target.name}, raising their faith to {round(target.faith)}!"
 
 
 def draw_dialogue_window(surface, font, speaker, text):
@@ -182,6 +202,49 @@ def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units
             opt_color = CURSOR_COLOR if idx == menu_index else (170, 170, 170)
         pointer = " -> " if idx == menu_index else "    "
         surface.blit(font.render(f"{pointer}{opt}", True, opt_color), (mx + 5, my + 45 + (idx * 26)))
+
+
+def draw_unit_profile(surface, font, unit, portraits, bottom_right):
+    if not unit:
+        return
+    width, height = 260, 104
+    right, bottom = bottom_right
+    px, py = right - width, bottom - height
+
+    pygame.draw.rect(surface, (20, 20, 30), (px, py, width, height))
+    pygame.draw.rect(surface, CURSOR_COLOR, (px, py, width, height), 2)
+
+    portrait = portraits.get(unit.name)
+    if portrait:
+        thumb = pygame.transform.smoothscale(portrait, (84, 42))
+        surface.blit(thumb, (px + 10, py + 10))
+
+    name_color = (100, 180, 255) if unit.team == "Player" else (255, 110, 110)
+    surface.blit(font.render(unit.name, True, name_color), (px + 104, py + 10))
+    if unit.char_class:
+        surface.blit(font.render(unit.char_class, True, (180, 180, 180)), (px + 104, py + 30))
+
+    bar_x, bar_w, bar_h = px + 10, width - 20, 16
+
+    faith_y = py + 56
+    faith_pct = max(0, min(1, unit.faith / 100))
+    pygame.draw.rect(surface, (60, 50, 10), (bar_x, faith_y, bar_w, bar_h))
+    pygame.draw.rect(surface, (255, 215, 0), (bar_x, faith_y, int(bar_w * faith_pct), bar_h))
+    pygame.draw.rect(surface, (230, 230, 230), (bar_x, faith_y, bar_w, bar_h), 1)
+    faith_text = font.render(f"FAITH {round(unit.faith)}/100", True, (255, 255, 255))
+    surface.blit(faith_text, faith_text.get_rect(center=(bar_x + bar_w // 2, faith_y + bar_h // 2)))
+
+    mp_y = faith_y + bar_h + 8
+    mp_pct = max(0, unit.mp / unit.max_mp) if unit.max_mp else 0
+    pygame.draw.rect(surface, (20, 20, 60), (bar_x, mp_y, bar_w, bar_h))
+    pygame.draw.rect(surface, (70, 140, 230), (bar_x, mp_y, int(bar_w * mp_pct), bar_h))
+    pygame.draw.rect(surface, (230, 230, 230), (bar_x, mp_y, bar_w, bar_h), 1)
+    mp_text = font.render(f"MP {unit.mp}/{unit.max_mp}", True, (255, 255, 255))
+    surface.blit(mp_text, mp_text.get_rect(center=(bar_x + bar_w // 2, mp_y + bar_h // 2)))
+
+
+def find_unit_at_tile(units, x, y):
+    return next((u for u in units if u.is_alive() and u.x == x and u.y == y), None)
 
 
 def get_winner(units):
@@ -346,17 +409,25 @@ UNIT_SLOT_WIDTH = 140
 UNIT_SLOT_HEIGHT = 70
 
 
-def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0):
+def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, in_water=False):
     cx, cy = sx, sy + (TILE_HEIGHT // 2) - 12
+    if in_water:
+        cy += round(6 * zoom)
     font = pygame.font.SysFont(None, 14)
     tag = "P" if unit.team == "Player" else "E"
     surface.blit(font.render(tag, True, (255, 255, 255)), (cx - 4, cy - 5))
-    pygame.draw.rect(surface, (200, 50, 50), (cx - 15, cy - 22, 30, 4))
-    hp_pct = max(0, unit.hp / unit.max_hp)
-    pygame.draw.rect(surface, (50, 200, 50), (cx - 15, cy - 22, int(30 * hp_pct), 4))
+    pygame.draw.rect(surface, (60, 50, 10), (cx - 15, cy - 22, 30, 4))
+    faith_pct = max(0, min(1, unit.faith / 100))
+    pygame.draw.rect(surface, (255, 215, 0), (cx - 15, cy - 22, int(30 * faith_pct), 4))
 
     cell_w = UNIT_SLOT_WIDTH * zoom * UNIT_CELL_FILL
     cell_h = UNIT_SLOT_HEIGHT * zoom * UNIT_CELL_FILL
+
+    water_line = cy + round(10 * zoom)
+    previous_clip = None
+    if in_water:
+        previous_clip = surface.get_clip()
+        surface.set_clip(pygame.Rect(0, 0, surface.get_width(), max(0, water_line)))
 
     portrait = portraits.get(unit.name) if portraits is not None else None
     if portrait:
@@ -370,6 +441,11 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0):
         radius = max(1, round(min(cell_w, cell_h) / 2))
         pygame.draw.circle(surface, unit.color, (cx, cy), radius)
         pygame.draw.circle(surface, (255, 255, 255), (cx, cy), radius, 2)
+
+    if in_water:
+        surface.set_clip(previous_clip)
+        ripple_w = max(10, round(cell_w * 0.5))
+        pygame.draw.ellipse(surface, (150, 210, 240), (cx - ripple_w // 2, water_line - 4, ripple_w, 8), 2)
 
     if is_active:
         pygame.draw.polygon(surface, (255, 60, 60), [(cx, cy - 28), (cx - 5, cy - 35), (cx + 5, cy - 35)])
@@ -393,6 +469,7 @@ def main(stage=None):
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    bring_window_to_front()
     pygame.display.set_caption(f"Tactics Engine: {stage['title']}" if stage else "Tactics Engine: Data Driven A* Pipeline")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 22)
@@ -407,6 +484,17 @@ def main(stage=None):
     music_start_time = pygame.time.get_ticks() + 1000
     music_started = False
 
+    assets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
+    attack_sound = None
+    step_sound = None
+    try:
+        attack_sound = pygame.mixer.Sound(os.path.join(assets_dir, "sfx_attack.wav"))
+        attack_sound.set_volume(0.6)
+        step_sound = pygame.mixer.Sound(os.path.join(assets_dir, "sfx_step.wav"))
+        step_sound.set_volume(0.5)
+    except (pygame.error, OSError):
+        pass
+
     origin_x = SCREEN_WIDTH // 2 - 80
     origin_y = SCREEN_HEIGHT // 4
 
@@ -419,7 +507,7 @@ def main(stage=None):
         background_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bg.jpg")
 
     units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
-    dialogues = load_dialogues_from_csv(stage.get("dialogues") if stage else None)
+    dialogues = load_dialogues_from_csv(map_id=stage["node_id"] if stage else "jerusalem")
     portraits = build_character_portraits(units, invalid_assets)
 
     background_image = load_background_image(background_path, invalid_assets)
@@ -435,9 +523,10 @@ def main(stage=None):
     valid_tiles = []
     combat_log = "System Engine Initialized. Map loaded cleanly."
     rotation = 2
-    map_zoom = 1.0
+    map_zoom = 1.5
     active_projectile = None
     ai_pause_until = 0
+    inspected_unit = None
     rotate_left_button = pygame.Rect(10, 205, 56, 32)
     rotate_right_button = pygame.Rect(76, 205, 56, 32)
     restart_button = pygame.Rect(SCREEN_WIDTH // 2 - 60, SCREEN_HEIGHT // 2 + 40, 120, 40)
@@ -455,18 +544,20 @@ def main(stage=None):
             music_started = True
 
         if game_state == "TICKING":
-            living_units = [u for u in units if u.is_alive()]
+            living_units = [u for u in units if u.is_alive() and not u.disabled]
             for u in living_units:
                 u.ct += u.speed
             ready = [u for u in living_units if u.ct >= 100]
             if ready:
                 ready.sort(key=lambda u: u.ct, reverse=True)
                 active_unit = ready[0]
+                inspected_unit = active_unit
                 active_unit.has_moved = False
                 active_unit.has_acted = False
                 snared_this_turn = active_unit.snared_turns > 0
                 if snared_this_turn:
                     active_unit.snared_turns -= 1
+                active_unit.faith = max(0, active_unit.faith - active_unit.faith * 0.01)
                 cursor_x, cursor_y = active_unit.x, active_unit.y
                 current_menu = get_action_menu(active_unit, units)
                 menu_index = 0
@@ -476,6 +567,8 @@ def main(stage=None):
                         next_step = get_ai_move_destination(active_unit, units)
                         if next_step is not None and not active_unit.has_moved and not snared_this_turn:
                             active_unit.x, active_unit.y = next_step
+                            if step_sound:
+                                step_sound.play()
                             active_unit.has_moved = True
                             active_unit.ct = 0
                             combat_log = f"{active_unit.name} advances toward the enemy and ends the turn."
@@ -511,9 +604,19 @@ def main(stage=None):
                             }
                             combat_log = f"{active_unit.name} fires an arrow at {target_unit.name}!"
                             game_state = "PROJECTILE"
+                            if attack_sound:
+                                attack_sound.play()
+                        elif rules["type"] == "Faith":
+                            combat_log = apply_preach(active_unit, target_unit, rules["damage"])
+                            active_unit.has_acted = True
+                            active_unit.ct = 0
+                            game_state = "AI_PAUSE"
+                            ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         else:
                             dmg = rules["damage"]
                             target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
+                            if rules["type"] != "Heal" and attack_sound:
+                                attack_sound.play()
                             if dmg >= 0:
                                 combat_log = f"{active_unit.name} uses {ai_choice['skill']} on {target_unit.name} for {dmg} damage!"
                             else:
@@ -647,14 +750,25 @@ def main(stage=None):
                                                 game_state = "TARGET_SELECT"
                                             else:
                                                 combat_log = f"Failed! Requires {skill_rules['mp_cost']} MP."
+                        else:
+                            hit_tile = screen_to_map(mx, my, origin_x, origin_y, MAP_DATA, rotation, map_zoom)
+                            if hit_tile is not None:
+                                clicked_unit = find_unit_at_tile(units, *hit_tile)
+                                if clicked_unit:
+                                    inspected_unit = clicked_unit
 
                     # Tactical map clicks (tile selection)
                     elif game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
                         hit_tile = screen_to_map(event.pos[0], event.pos[1], origin_x, origin_y, MAP_DATA, rotation, map_zoom)
                         if hit_tile is not None:
                             cursor_x, cursor_y = hit_tile
+                            clicked_unit = find_unit_at_tile(units, *hit_tile)
+                            if clicked_unit:
+                                inspected_unit = clicked_unit
                             if game_state == "MOVE_SELECT" and hit_tile in valid_tiles:
                                 active_unit.x, active_unit.y = hit_tile
+                                if step_sound:
+                                    step_sound.play()
                                 active_unit.has_moved = True
                                 current_menu = get_action_menu(active_unit, units)
                                 menu_index = 0
@@ -686,10 +800,16 @@ def main(stage=None):
                                     else:
                                         combat_log = f"{active_unit.name} fires an arrow at the ground."
                                     game_state = "PROJECTILE"
+                                    if attack_sound:
+                                        attack_sound.play()
                                 else:
-                                    if target_unit:
+                                    if target_unit and rules["type"] == "Faith":
+                                        combat_log = apply_preach(active_unit, target_unit, rules["damage"])
+                                    elif target_unit:
                                         dmg = rules["damage"]
                                         target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
+                                        if rules["type"] != "Heal" and attack_sound:
+                                            attack_sound.play()
                                         if dmg >= 0:
                                             combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name} for {dmg} damage!"
                                         else:
@@ -704,6 +824,14 @@ def main(stage=None):
                                     current_menu = get_action_menu(active_unit, units)
                                     menu_index = 2
                                     game_state = "MENU"
+
+                    # Any other state: clicking a unit just inspects it
+                    else:
+                        hit_tile = screen_to_map(event.pos[0], event.pos[1], origin_x, origin_y, MAP_DATA, rotation, map_zoom)
+                        if hit_tile is not None:
+                            clicked_unit = find_unit_at_tile(units, *hit_tile)
+                            if clicked_unit:
+                                inspected_unit = clicked_unit
 
             # Handle map pan with ASWD keys (always available)
             elif event.type == pygame.KEYDOWN:
@@ -804,6 +932,8 @@ def main(stage=None):
                     elif event.key == pygame.K_SPACE:
                         if game_state == "MOVE_SELECT" and (cursor_x, cursor_y) in valid_tiles:
                             active_unit.x, active_unit.y = cursor_x, cursor_y
+                            if step_sound:
+                                step_sound.play()
                             active_unit.has_moved = True
                             current_menu = get_action_menu(active_unit, units)
                             menu_index = 0
@@ -832,10 +962,16 @@ def main(stage=None):
                                 }
                                 combat_log = f"{active_unit.name} fires an arrow at {target_unit.name}!"
                                 game_state = "PROJECTILE"
+                                if attack_sound:
+                                    attack_sound.play()
                             else:
-                                if target_unit:
+                                if target_unit and rules["type"] == "Faith":
+                                    combat_log = apply_preach(active_unit, target_unit, rules["damage"])
+                                elif target_unit:
                                     dmg = rules["damage"]
                                     target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
+                                    if rules["type"] != "Heal" and attack_sound:
+                                        attack_sound.play()
                                     if dmg >= 0:
                                         combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name} for {dmg} damage!"
                                     else:
@@ -920,7 +1056,7 @@ def main(stage=None):
 
             for u in units:
                 if u.x == x and u.y == y and u.is_alive():
-                    draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=portraits, zoom=map_zoom)
+                    draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=portraits, zoom=map_zoom, in_water=is_water_tile(terrain_path))
 
             if game_state in ["MOVE_SELECT", "TARGET_SELECT"] and x == cursor_x and y == cursor_y:
                 pygame.draw.polygon(screen, CURSOR_COLOR, top_pts, 3)
@@ -971,6 +1107,8 @@ def main(stage=None):
                 for idx, (path, reason) in enumerate(invalid_assets[:2]):
                     screen.blit(font.render(f"{reason}: {os.path.basename(path)}", True, (255, 180, 120)), (25, panel_rect.y + 56 + idx * 16))
             screen.set_clip(previous_clip)
+
+            draw_unit_profile(screen, font, inspected_unit, portraits, (SCREEN_WIDTH - 10, panel_rect.y - 10))
 
         if game_state in ["MENU", "SUBMENU_ACT"] and active_unit:
             draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, portraits)

@@ -1,7 +1,7 @@
-node_id,title,map_layout,terrain_layout,characters,dialogues
-galilee,Sea of Galilee,stages/galilee/map_layout.csv,stages/galilee/terrain_layout.csv,stages/galilee/characters.csv,stages/galilee/dialogues.csv
-cana,Wedding at Cana,stages/cana/map_layout.csv,stages/cana/terrain_layout.csv,stages/cana/characters.csv,stages/cana/dialogues.csv
-nazareth,Nazareth,stages/nazareth/map_layout.csv,stages/nazareth/terrain_layout.csv,stages/nazareth/characters.csv,stages/nazareth/dialogues.csv
-samaria,Samaria,stages/samaria/map_layout.csv,stages/samaria/terrain_layout.csv,stages/samaria/characters.csv,stages/samaria/dialogues.csv
-bethany,Bethany,stages/bethany/map_layout.csv,stages/bethany/terrain_layout.csv,stages/bethany/characters.csv,stages/bethany/dialogues.csv
-jerusalem,Jerusalem,stages/jerusalem/map_layout.csv,stages/jerusalem/terrain_layout.csv,stages/jerusalem/characters.csv,stages/jerusalem/dialogues.csv
+node_id,title,map_layout,terrain_layout,characters
+galilee,Sea of Galilee,stages/galilee/map_layout.csv,stages/galilee/terrain_layout.csv,stages/galilee/characters.csv
+cana,Wedding at Cana,stages/cana/map_layout.csv,stages/cana/terrain_layout.csv,stages/cana/characters.csv
+nazareth,Nazareth,stages/nazareth/map_layout.csv,stages/nazareth/terrain_layout.csv,stages/nazareth/characters.csv
+samaria,Samaria,stages/samaria/map_layout.csv,stages/samaria/terrain_layout.csv,stages/samaria/characters.csv
+bethany,Bethany,stages/bethany/map_layout.csv,stages/bethany/terrain_layout.csv,stages/bethany/characters.csv
+jerusalem,Jerusalem,stages/jerusalem/map_layout.csv,stages/jerusalem/terrain_layout.csv,stages/jerusalem/characters.csv

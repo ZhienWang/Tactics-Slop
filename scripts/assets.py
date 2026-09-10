@@ -1,6 +1,20 @@
 import os
+import sys
 import pygame
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT
+
+
+def bring_window_to_front():
+    """Force the game window to the foreground so it doesn't open behind other windows."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        hwnd = pygame.display.get_wm_info().get("window")
+        if hwnd:
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
 
 
 def load_image_safe(path, invalid_paths=None):

@@ -1,5 +1,5 @@
 skill_name,mp_cost,range,damage,type,r,g,b
-Attack,0,1,30,Physical,200,50,50
+Preach,0,1,30,Faith,255,215,0
 Shoot,0,3,40,Physical,200,180,50
 Fire,10,3,50,Magic,255,100,50
 Blizzard,12,3,45,Magic,100,200,255

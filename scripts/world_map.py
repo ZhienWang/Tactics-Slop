@@ -5,7 +5,7 @@ import pygame
 
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, CURSOR_COLOR
 from scripts.data_editor import generate_dummy_csv_files, load_characters_from_csv, load_stage_manifest
-from scripts.assets import build_character_portraits
+from scripts.assets import build_character_portraits, load_image_safe, bring_window_to_front
 from scripts.game_logic import Unit, main as run_battle
 
 # --- WORLD MAP DATA ---
@@ -13,14 +13,14 @@ from scripts.game_logic import Unit, main as run_battle
 # Super Mario World overworld: from any node you can only travel to a node
 # that is directly connected to it, one hop at a time.
 NODES = {
-    "galilee":   {"pos": (140, 700),  "name": "Sea of Galilee", "type": "stage", "connections": ["capernaum"]},
-    "capernaum": {"pos": (320, 630),  "name": "Capernaum",      "type": "town",  "connections": ["galilee", "cana"]},
-    "cana":      {"pos": (500, 560),  "name": "Cana",           "type": "stage", "connections": ["capernaum", "nazareth", "samaria"]},
-    "nazareth":  {"pos": (650, 400),  "name": "Nazareth",       "type": "stage", "connections": ["cana", "jericho"]},
-    "samaria":   {"pos": (650, 700),  "name": "Samaria",        "type": "stage", "connections": ["cana", "jericho"]},
-    "jericho":   {"pos": (850, 550),  "name": "Jericho",        "type": "town",  "connections": ["nazareth", "samaria", "bethany"]},
-    "bethany":   {"pos": (1050, 460), "name": "Bethany",        "type": "stage", "connections": ["jericho", "jerusalem"]},
-    "jerusalem": {"pos": (1280, 360), "name": "Jerusalem",      "type": "stage", "connections": ["bethany"]},
+    "galilee":   {"pos": (352, 320),  "name": "Sea of Galilee", "type": "stage", "connections": ["capernaum"]},
+    "capernaum": {"pos": (273, 570),  "name": "Capernaum",      "type": "town",  "connections": ["galilee", "cana"]},
+    "cana":      {"pos": (609, 500),  "name": "Cana",           "type": "stage", "connections": ["capernaum", "nazareth", "samaria"]},
+    "nazareth":  {"pos": (727, 258),  "name": "Nazareth",       "type": "stage", "connections": ["cana", "jericho"]},
+    "samaria":   {"pos": (727, 695),  "name": "Samaria",        "type": "stage", "connections": ["cana", "jericho"]},
+    "jericho":   {"pos": (969, 438),  "name": "Jericho",        "type": "town",  "connections": ["nazareth", "samaria", "bethany"]},
+    "bethany":   {"pos": (1266, 563), "name": "Bethany",        "type": "stage", "connections": ["jericho", "jerusalem"]},
+    "jerusalem": {"pos": (1406, 258), "name": "Jerusalem",      "type": "stage", "connections": ["bethany"]},
 }
 START_NODE = "galilee"
 NODE_CLICK_RADIUS = 26
@@ -201,9 +201,14 @@ def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Tactics Engine: World Map")
+    bring_window_to_front()
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 22)
     title_font = pygame.font.SysFont(None, 34)
+
+    map_background = load_image_safe("assets/world_map.jpg")
+    if map_background:
+        map_background = pygame.transform.smoothscale(map_background, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
     stage_manifest = load_stage_manifest()
 
@@ -319,7 +324,10 @@ def main():
                 state = STATE_MAP
 
         # --- DRAW ---
-        screen.fill((30, 34, 40))
+        if map_background:
+            screen.blit(map_background, (0, 0))
+        else:
+            screen.fill((30, 34, 40))
         title = title_font.render("The Road to Jerusalem", True, PANEL_BORDER)
         screen.blit(title, (30, 24))
 

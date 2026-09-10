@@ -38,18 +38,66 @@ TERRAIN_TILE_PATHS = [
     "assets/grass.jpg",
     "assets/stone.png",
     "assets/moss.png",
+    "assets/sand.png",
+    "assets/snow.png",
+    "assets/dirt.png",
+    "assets/wood.png",
+    "assets/cobblestone.png",
 ]
 
+WATER_TILE_PATH = "assets/water.png"
 
-def generate_terrain_csv(rows=6, cols=6, seed=None):
-    """Create a varied terrain grid while avoiding same-tile clusters."""
+# Relative frequency of each tile when randomly generating a terrain layout.
+# Water is intentionally rarer, so it reads as a river/pond feature rather
+# than a dominant terrain type.
+TERRAIN_TILE_WEIGHTS = {
+    "assets/grass.jpg": 3,
+    "assets/stone.png": 2,
+    "assets/moss.png": 2,
+    "assets/sand.png": 2,
+    "assets/snow.png": 2,
+    "assets/dirt.png": 2,
+    "assets/wood.png": 2,
+    "assets/cobblestone.png": 2,
+    WATER_TILE_PATH: 1,
+}
+
+
+def is_water_tile(terrain_path):
+    """Whether a terrain image path represents a water/river tile."""
+    return bool(terrain_path) and os.path.basename(terrain_path).lower() == "water.png"
+
+
+# Each stage draws from a small, themed subset of tiles (3-4 max) rather
+# than the full palette, so a map reads as one coherent place instead of a
+# random patchwork.
+TERRAIN_THEMES = {
+    "coastal": {"assets/grass.jpg": 3, "assets/water.png": 2, "assets/sand.png": 2, "assets/dirt.png": 1},
+    "village": {"assets/grass.jpg": 3, "assets/dirt.png": 2, "assets/wood.png": 2, "assets/stone.png": 1},
+    "hillside": {"assets/stone.png": 3, "assets/cobblestone.png": 2, "assets/dirt.png": 2, "assets/grass.jpg": 1},
+    "desert": {"assets/sand.png": 3, "assets/dirt.png": 2, "assets/stone.png": 2, "assets/water.png": 1},
+    "mountain": {"assets/stone.png": 3, "assets/cobblestone.png": 2, "assets/snow.png": 2, "assets/dirt.png": 1},
+    "city": {"assets/cobblestone.png": 3, "assets/stone.png": 2, "assets/wood.png": 2, "assets/sand.png": 1},
+}
+
+
+def generate_terrain_csv(rows=6, cols=6, seed=None, weights=None):
+    """Create a varied terrain grid while avoiding same-tile clusters.
+
+    `weights` optionally restricts generation to a themed subset of tiles
+    (see TERRAIN_THEMES); it defaults to the full tile palette.
+    """
     rng = random.Random(seed)
     tile_count = rows * cols
-    tiles = (
-        [TERRAIN_TILE_PATHS[0]] * (tile_count // 2)
-        + [TERRAIN_TILE_PATHS[1]] * (tile_count // 4)
-        + [TERRAIN_TILE_PATHS[2]] * (tile_count - (tile_count // 2) - (tile_count // 4))
-    )
+    weights = weights or TERRAIN_TILE_WEIGHTS
+    total_weight = sum(weights.values())
+    tiles = []
+    for tile_path, weight in weights.items():
+        tiles.extend([tile_path] * max(1, round(tile_count * weight / total_weight)))
+    while len(tiles) < tile_count:
+        tiles.append(next(iter(weights)))
+    while len(tiles) > tile_count:
+        tiles.pop()
     rng.shuffle(tiles)
     grid = []
 
@@ -159,13 +207,15 @@ def load_settings_from_csv(filepath=None):
     return settings
 
 
-def load_dialogues_from_csv(filepath=None):
-    """Parses dialogue lines grouped by turn in CSV order."""
+def load_dialogues_from_csv(filepath=None, map_id=None):
+    """Parses dialogue lines grouped by turn, optionally filtered to a single map/stage."""
     dialogues = {}
     filepath = filepath or os.path.join(DATA_DIR, "dialogues.csv")
     with open(filepath, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            if map_id is not None and row.get("map", "").strip() != map_id:
+                continue
             turn = int(row["turn"])
             line = (row["character"].strip(), row["text"].strip())
             dialogues.setdefault(turn, []).append(line)
@@ -182,11 +232,11 @@ def load_stage_manifest(filepath=None):
         reader = csv.DictReader(f)
         for row in reader:
             stages[row["node_id"]] = {
+                "node_id": row["node_id"],
                 "title": row["title"],
                 "map_layout": os.path.join(DATA_DIR, row["map_layout"]),
                 "terrain_layout": os.path.join(DATA_DIR, row["terrain_layout"]),
                 "characters": os.path.join(DATA_DIR, row["characters"]),
-                "dialogues": os.path.join(DATA_DIR, row["dialogues"]) if row.get("dialogues") else None,
             }
     return stages
 
