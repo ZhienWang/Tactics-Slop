@@ -14,8 +14,11 @@ from scripts.data_editor import (
     load_dialogues_from_csv,
     load_characters_from_csv,
     generate_terrain_csv,
+    generate_map_csv,
     load_terrain_from_text,
     is_water_tile,
+    TERRAIN_THEMES,
+    STAGE_THEMES,
 )
 from scripts.config import (
     SCREEN_WIDTH,
@@ -577,7 +580,11 @@ async def main(stage=None):
             generate_dummy_csv_files()
 
     invalid_assets = []
-    MAP_DATA = load_map_from_csv(stage.get("map_layout") if stage else None)
+    try:
+        MAP_DATA = load_map_from_csv(stage.get("map_layout") if stage else None)
+    except (FileNotFoundError, OSError):
+        seed = stage.get("node_id") if stage else None
+        MAP_DATA = [[int(v) for v in line.split(",")] for line in generate_map_csv(8, 8, seed=seed).splitlines()]
     SKILL_REGISTRY = load_skills_from_csv()
     CHARACTER_ROSTER = load_characters_from_csv(stage.get("characters") if stage else None)
     MAP_ROWS = len(MAP_DATA)
@@ -614,9 +621,14 @@ async def main(stage=None):
     origin_x = SCREEN_WIDTH // 2 - 80
     origin_y = SCREEN_HEIGHT // 4
 
-    TERRAIN_LAYOUT = load_terrain_from_csv(stage.get("terrain_layout") if stage else None)
+    try:
+        TERRAIN_LAYOUT = load_terrain_from_csv(stage.get("terrain_layout") if stage else None)
+    except (FileNotFoundError, OSError):
+        TERRAIN_LAYOUT = []
     if len(TERRAIN_LAYOUT) != MAP_ROWS or any(len(row) != MAP_COLS for row in TERRAIN_LAYOUT):
-        TERRAIN_LAYOUT = load_terrain_from_text(generate_terrain_csv(MAP_ROWS, MAP_COLS))
+        theme = STAGE_THEMES.get(stage.get("node_id")) if stage else None
+        weights = TERRAIN_THEMES.get(theme)
+        TERRAIN_LAYOUT = load_terrain_from_text(generate_terrain_csv(MAP_ROWS, MAP_COLS, weights=weights))
     settings = load_settings_from_csv()
     background_path = settings.get("background_path", "").strip()
     if not background_path:

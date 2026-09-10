@@ -80,6 +80,19 @@ TERRAIN_THEMES = {
     "city": {"assets/cobblestone.png": 3, "assets/stone.png": 2, "assets/wood.png": 2, "assets/sand.png": 1},
 }
 
+# Which theme each stage's terrain should draw from if its terrain_layout.csv
+# is ever missing/malformed and generate_terrain_csv() has to fall back to
+# generating one on the fly. Matches the theme each stage's actual saved
+# terrain already uses, so a regenerated map still reads as the same place.
+STAGE_THEMES = {
+    "galilee": "coastal",
+    "cana": "village",
+    "nazareth": "hillside",
+    "samaria": "desert",
+    "bethany": "mountain",
+    "jerusalem": "city",
+}
+
 
 def generate_terrain_csv(rows=6, cols=6, seed=None, weights=None):
     """Create a varied terrain grid while avoiding same-tile clusters.
@@ -119,6 +132,27 @@ def generate_terrain_csv(rows=6, cols=6, seed=None, weights=None):
             tiles.pop(selected_index)
 
     return "\n".join(",".join(row) for row in grid)
+
+
+def generate_map_csv(rows=6, cols=6, seed=None, max_height=2):
+    """Create a smooth elevation grid radiating from a random peak, rather
+    than per-tile noise, so it reads as one hill/ridge instead of jagged
+    static. Used as a fallback when a stage has no hand-authored
+    map_layout.csv (load_map_from_csv() would otherwise just crash)."""
+    rng = random.Random(seed)
+    peak_x, peak_y = rng.randrange(cols), rng.randrange(rows)
+    max_dist = max(1, (rows + cols) // 2)
+    grid = []
+    for y in range(rows):
+        row = []
+        for x in range(cols):
+            dist = abs(x - peak_x) + abs(y - peak_y)
+            base = max(0, max_height - round(max_height * dist / max_dist))
+            jitter = rng.choice([-1, 0, 0, 0, 1])
+            row.append(max(0, min(max_height, base + jitter)))
+        grid.append(row)
+    return "\n".join(",".join(str(v) for v in row) for row in grid)
+
 
 def generate_dummy_csv_files():
     """Writes the dummy text configurations to actual CSV files on disk."""
