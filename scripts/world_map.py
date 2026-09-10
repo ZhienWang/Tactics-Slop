@@ -4,7 +4,7 @@ import math
 import asyncio
 import pygame
 
-from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, CURSOR_COLOR
+from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, CURSOR_COLOR, FAITH_CAP
 from scripts.data_editor import generate_dummy_csv_files, load_characters_from_csv, load_stage_manifest
 from scripts.assets import build_character_portraits, load_image_safe, bring_window_to_front
 from scripts.game_logic import Unit, main as run_battle
@@ -163,7 +163,7 @@ def draw_unit_list(surface, font, units, portraits, index):
         pointer = "->" if selected else "  "
         surface.blit(font.render(f"{pointer} {unit.name}", True, name_color), (mx + 80, row_y))
         surface.blit(font.render(unit.char_class, True, TEXT_DIM), (mx + 80, row_y + 18))
-        stats_text = f"Faith {round(unit.faith):3}/100   MP {unit.mp:2}/{unit.max_mp}"
+        stats_text = f"Faith {round(unit.faith):3}/{FAITH_CAP}   MP {unit.mp:2}/{unit.max_mp}"
         surface.blit(font.render(stats_text, True, TEAM_COLOR), (mx + 260, row_y + 6))
 
 
@@ -181,7 +181,7 @@ def draw_unit_detail(surface, font, unit, portraits):
 
     surface.blit(font.render(unit.name, True, PANEL_BORDER), (mx + 16, my + 12))
     surface.blit(font.render(unit.char_class, True, TEXT_DIM), (mx + 170, my + 62))
-    surface.blit(font.render(f"Faith  {round(unit.faith):3} / 100", True, (255, 215, 0)), (mx + 170, my + 84))
+    surface.blit(font.render(f"Faith  {round(unit.faith):3} / {FAITH_CAP}", True, (255, 215, 0)), (mx + 170, my + 84))
     surface.blit(font.render(f"MP  {unit.mp:3} / {unit.max_mp}", True, (120, 170, 240)), (mx + 170, my + 104))
 
     pygame.draw.line(surface, (70, 70, 85), (mx + 16, my + 150), (mx + width - 16, my + 150), 1)

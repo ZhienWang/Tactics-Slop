@@ -25,6 +25,7 @@ from scripts.config import (
     BG_COLOR,
     GRID_COLOR,
     CURSOR_COLOR,
+    FAITH_CAP,
     CLASS_SKILLSETS,
 )
 from scripts.assets import (
@@ -182,8 +183,8 @@ FAITH_TRANSFER_RATE = 0.2
 
 def apply_preach(preacher, target):
     gain = preacher.faith * FAITH_TRANSFER_RATE
-    target.faith = max(0, min(100, target.faith + gain))
-    if target.faith >= 100 and target.team != "Player":
+    target.faith = max(0, min(FAITH_CAP, target.faith + gain))
+    if target.faith >= FAITH_CAP and target.team != "Player":
         target.team = "Player"
         target.color = (70, 140, 255)
         target.disabled = True
@@ -260,11 +261,11 @@ def draw_unit_profile(surface, font, unit, portraits, bottom_right):
     bar_x, bar_w, bar_h = px + 10, width - 20, 16
 
     faith_y = py + 56
-    faith_pct = max(0, min(1, unit.faith / 100))
+    faith_pct = max(0, min(1, unit.faith / FAITH_CAP))
     pygame.draw.rect(surface, (60, 50, 10), (bar_x, faith_y, bar_w, bar_h))
     pygame.draw.rect(surface, (255, 215, 0), (bar_x, faith_y, int(bar_w * faith_pct), bar_h))
     pygame.draw.rect(surface, (230, 230, 230), (bar_x, faith_y, bar_w, bar_h), 1)
-    faith_text = font.render(f"FAITH {round(unit.faith)}/100", True, (255, 255, 255))
+    faith_text = font.render(f"FAITH {round(unit.faith)}/{FAITH_CAP}", True, (255, 255, 255))
     surface.blit(faith_text, faith_text.get_rect(center=(bar_x + bar_w // 2, faith_y + bar_h // 2)))
 
     mp_y = faith_y + bar_h + 8
@@ -310,7 +311,7 @@ def choose_ai_action(unit, units_list):
 
         if skill_data["type"] == "Heal":
             for ally in allies:
-                if ally == unit or ally.faith >= 100:
+                if ally == unit or ally.faith >= FAITH_CAP:
                     continue
                 distance = abs(unit.x - ally.x) + abs(unit.y - ally.y)
                 if distance > skill_data["range"]:
@@ -350,7 +351,7 @@ def choose_ai_action(unit, units_list):
 
 def get_ai_move_destination(unit, units_list):
     allies = [u for u in units_list if u.is_alive() and u.team == unit.team]
-    injured_allies = [u for u in allies if u.faith < 100 and u != unit]
+    injured_allies = [u for u in allies if u.faith < FAITH_CAP and u != unit]
     enemies = [u for u in units_list if u.is_alive() and u.team != unit.team]
     if injured_allies and any(skill_name for skill_name in unit.skills if SKILL_REGISTRY.get(skill_name, {}).get("type") == "Heal"):
         target = min(injured_allies, key=lambda u: (u.faith, abs(unit.x - u.x) + abs(unit.y - u.y)))
@@ -450,7 +451,7 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
     tag = "P" if unit.team == "Player" else "E"
     surface.blit(font.render(tag, True, (255, 255, 255)), (cx - 4, cy - 5))
     pygame.draw.rect(surface, (60, 50, 10), (cx - 15, cy - 22, 30, 4))
-    faith_pct = max(0, min(1, unit.faith / 100))
+    faith_pct = max(0, min(1, unit.faith / FAITH_CAP))
     pygame.draw.rect(surface, (255, 215, 0), (cx - 15, cy - 22, int(30 * faith_pct), 4))
 
     cell_w = UNIT_SLOT_WIDTH * zoom * UNIT_CELL_FILL

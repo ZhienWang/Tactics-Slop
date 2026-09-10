@@ -106,13 +106,24 @@ def test_move_action_is_hidden_when_unit_has_no_reachable_destination():
 
 
 def test_dialogues_are_loaded_by_character_and_turn():
-    dialogues = load_dialogues_from_csv()
+    dialogues = load_dialogues_from_csv(map_id="jerusalem")
 
     assert dialogues[1][0] == (
         "Judas",
         "(Approaches Jesus with a kiss) Here's the man you want, Romans.",
     )
     assert dialogues[1][-1] == ("James", "Lord, should we strike with our swords?")
+
+
+def test_dialogues_are_scoped_per_stage():
+    galilee = load_dialogues_from_csv(map_id="galilee")
+    jerusalem = load_dialogues_from_csv(map_id="jerusalem")
+
+    assert galilee[1] == [
+        ("Jesus", "Come, follow me, and I will send you out to fish for people."),
+        ("Peter", "Lord, we have left everything to follow you. A patrol blocks the shore ahead!"),
+    ]
+    assert all(speaker != "Jesus" or "fish for people" not in text for speaker, text in jerusalem[1])
 
 
 def test_fish_net_targets_enemies_and_prevents_movement():
