@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" viewBox="-6.6554 30.0755 76.8332 38.5316" width="76.8332" height="38.5316"><defs> 
+      
+     <linearGradient id="isoBaseTop" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#475569" /><stop offset="100%" stop-color="#334155" /> 
+     </linearGradient> 
+     <linearGradient id="isoBaseRight" x1="0%" y1="0%" x2="0%" y2="100%"> 
+       <stop offset="0%" stop-color="#1e293b" /><stop offset="100%" stop-color="#0f172a" /> 
+     </linearGradient> 
+
+      
+     <linearGradient id="skin" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#fed7aa" /><stop offset="100%" stop-color="#fdba74" /> 
+     </linearGradient> 
+     <linearGradient id="hairDark" x1="0%" y1="0%" x2="0%" y2="100%"> 
+       <stop offset="0%" stop-color="#451a03" /><stop offset="100%" stop-color="#180e04" /> 
+     </linearGradient> 
+     <linearGradient id="hairGrey" x1="0%" y1="0%" x2="0%" y2="100%"> 
+       <stop offset="0%" stop-color="#94a3b8" /><stop offset="100%" stop-color="#475569" /> 
+     </linearGradient> 
+
+      
+     <linearGradient id="jesusWhite" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#ffffff" /><stop offset="100%" stop-color="#cbd5e1" /> 
+     </linearGradient> 
+     <linearGradient id="jesusRed" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#f87171" /><stop offset="100%" stop-color="#991b1b" /> 
+     </linearGradient> 
+     <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#fde047" /><stop offset="100%" stop-color="#ca8a04" /> 
+     </linearGradient> 
+      
+     <linearGradient id="blueRobe" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#38bdf8" /><stop offset="100%" stop-color="#0369a1" /> 
+     </linearGradient> 
+     <linearGradient id="greenRobe" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#4ade80" /><stop offset="100%" stop-color="#15803d" /> 
+     </linearGradient> 
+     <linearGradient id="purpleRobe" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#c084fc" /><stop offset="100%" stop-color="#6b21a8" /> 
+     </linearGradient> 
+     <linearGradient id="orangeRobe" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#fb923c" /><stop offset="100%" stop-color="#c2410c" /> 
+     </linearGradient> 
+     <linearGradient id="tealRobe" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#2dd4bf" /><stop offset="100%" stop-color="#0f766e" /> 
+     </linearGradient> 
+     <linearGradient id="brownRobe" x1="0%" y1="0%" x2="100%" y2="100%"> 
+       <stop offset="0%" stop-color="#a16207" /><stop offset="100%" stop-color="#451a03" /> 
+     </linearGradient> 
+
+      
+     <g id="iso-tile"> 
+       <polygon points="32,63 49,54.5 32,46 15,54.5" fill="#000000" opacity="0.25" /> 
+       <polygon points="17,55 32,62.5 32,60.5 17,53" fill="#334155" /> 
+       <polygon points="32,62.5 47,55 47,53 32,60.5" fill="#162032" /> 
+       <polygon points="17,53 32,60.5 47,53 32,45.5" fill="#64748b" /> 
+       <polygon points="18,52.5 32,59.5 46,52.5 32,45.5" fill="#3d4b5f" /> 
+       <polygon points="21,52 32,57.5 43,52 32,46.5" fill="#1e293b" /> 
+     </g> 
+
+     <g id="chibi-head"> 
+        
+       <path d="M 32 30 L 38 33 L 32 36 L 26 33 Z" fill="#fdc88f" /> 
+       <path d="M 26 33 L 32 36 L 32 41 L 26 38 Z" fill="#fdc88f" /> 
+       <path d="M 32 36 L 38 33 L 38 38 L 32 41 Z" fill="#fdc88f" /> 
+        
+       <circle cx="30.5" cy="37.8" r="0.8" fill="#0f172a" /> 
+       <circle cx="33.5" cy="37.8" r="0.8" fill="#0f172a" /> 
+       <circle cx="30.7" cy="37.6" r="0.3" fill="#ffffff" /> 
+       <circle cx="33.7" cy="37.6" r="0.3" fill="#ffffff" /> 
+     </g> 
+   </defs><g transform="translate(0, 4)"><g> 
+     <use href="#iso-tile" /> 
+     <path d="M 28 41.5 L 32 43.5 L 32 48 L 28 46 Z" fill="#2faf5e" /> 
+     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="#e3b525" /> 
+     <path d="M 26 32 L 32 28 L 38 32 L 38 36 L 26 36 Z" fill="#2e1403" /> 
+     <use href="#chibi-head" /> 
+      
+     <circle cx="39" cy="42" r="2" fill="#733e05" /> 
+     <circle cx="39" cy="40" r="1" fill="#e3b525" /> 
+   </g></g></svg>

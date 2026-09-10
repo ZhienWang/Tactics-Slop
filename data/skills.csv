@@ -3,7 +3,7 @@ Attack,0,1,30,Physical,200,50,50
 Shoot,0,3,40,Physical,200,180,50
 Fire,10,3,50,Magic,255,100,50
 Blizzard,12,3,45,Magic,100,200,255
-Chakra,0,1,-40,Heal,100,255,100
+First Aid,0,1,-40,Heal,100,255,100
 Heal,15,2,-60,Heal,100,255,100
 Resurrection,50,3,-100,Heal,255,200,0
 Defend,0,1,0,Support,100,200,100

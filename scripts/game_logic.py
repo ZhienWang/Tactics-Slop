@@ -64,6 +64,14 @@ class Unit:
         self.has_moved = False
         self.has_acted = False
         self.snared_turns = 0
+        self.physical_attack = data.get("physical_attack", 25)
+        self.physical_defense = data.get("physical_defense", 25)
+        self.magic_attack = data.get("magic_attack", 25)
+        self.magic_defense = data.get("magic_defense", 25)
+        self.faith = data.get("faith", 25)
+        self.bravery = data.get("bravery", 25)
+        self.patience = data.get("patience", 25)
+        self.love = data.get("love", 25)
 
     def is_alive(self):
         return self.hp > 0
@@ -181,6 +189,9 @@ def get_winner(units):
     if len(alive_teams) == 1:
         return next(iter(alive_teams))
     return None
+
+
+AI_ACTION_DELAY_MS = 500
 
 
 def is_ai_team(team):
@@ -326,7 +337,16 @@ def draw_iso_tile(surface, sx, sy, height, color, terrain_image=None, zoom=1.0):
     return top_points
 
 
-def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None):
+UNIT_CELL_FILL = 0.8
+# A unit's visual "slot" is larger than the flat tile footprint (TILE_WIDTH x
+# TILE_HEIGHT) since standee sprites are meant to rise above/overlap the tile
+# they stand on. This matches the sprite footprint used before per-zoom sizing
+# was added (140x70 at zoom 1).
+UNIT_SLOT_WIDTH = 140
+UNIT_SLOT_HEIGHT = 70
+
+
+def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0):
     cx, cy = sx, sy + (TILE_HEIGHT // 2) - 12
     font = pygame.font.SysFont(None, 14)
     tag = "P" if unit.team == "Player" else "E"
@@ -335,37 +355,45 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None):
     hp_pct = max(0, unit.hp / unit.max_hp)
     pygame.draw.rect(surface, (50, 200, 50), (cx - 15, cy - 22, int(30 * hp_pct), 4))
 
+    cell_w = UNIT_SLOT_WIDTH * zoom * UNIT_CELL_FILL
+    cell_h = UNIT_SLOT_HEIGHT * zoom * UNIT_CELL_FILL
+
     portrait = portraits.get(unit.name) if portraits is not None else None
     if portrait:
-        portrait_rect = portrait.get_rect(center=(cx, cy))
-        surface.blit(portrait, portrait_rect)
-        pygame.draw.circle(surface, (255, 255, 255), (cx, cy), 15, 2)
+        pw, ph = portrait.get_size()
+        scale = min(cell_w / pw, cell_h / ph)
+        fit_size = (max(1, round(pw * scale)), max(1, round(ph * scale)))
+        fitted_portrait = pygame.transform.smoothscale(portrait, fit_size)
+        portrait_rect = fitted_portrait.get_rect(center=(cx, cy))
+        surface.blit(fitted_portrait, portrait_rect)
     else:
-        pygame.draw.circle(surface, unit.color, (cx, cy), 12)
-        pygame.draw.circle(surface, (255, 255, 255), (cx, cy), 12, 2)
+        radius = max(1, round(min(cell_w, cell_h) / 2))
+        pygame.draw.circle(surface, unit.color, (cx, cy), radius)
+        pygame.draw.circle(surface, (255, 255, 255), (cx, cy), radius, 2)
 
     if is_active:
         pygame.draw.polygon(surface, (255, 60, 60), [(cx, cy - 28), (cx - 5, cy - 35), (cx + 5, cy - 35)])
 
 
-def main():
+def main(stage=None):
     global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-    required_files = ["map_layout.csv", "skills.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
-    if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
-        generate_dummy_csv_files()
+    if stage is None:
+        required_files = ["map_layout.csv", "skills.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
+        if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
+            generate_dummy_csv_files()
 
     invalid_assets = []
-    MAP_DATA = load_map_from_csv()
+    MAP_DATA = load_map_from_csv(stage.get("map_layout") if stage else None)
     SKILL_REGISTRY = load_skills_from_csv()
-    CHARACTER_ROSTER = load_characters_from_csv()
+    CHARACTER_ROSTER = load_characters_from_csv(stage.get("characters") if stage else None)
     MAP_ROWS = len(MAP_DATA)
     MAP_COLS = len(MAP_DATA[0]) if MAP_DATA else 0
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Tactics Engine: Data Driven A* Pipeline")
+    pygame.display.set_caption(f"Tactics Engine: {stage['title']}" if stage else "Tactics Engine: Data Driven A* Pipeline")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 22)
     music_ready = False
@@ -382,7 +410,7 @@ def main():
     origin_x = SCREEN_WIDTH // 2 - 80
     origin_y = SCREEN_HEIGHT // 4
 
-    TERRAIN_LAYOUT = load_terrain_from_csv()
+    TERRAIN_LAYOUT = load_terrain_from_csv(stage.get("terrain_layout") if stage else None)
     if len(TERRAIN_LAYOUT) != MAP_ROWS or any(len(row) != MAP_COLS for row in TERRAIN_LAYOUT):
         TERRAIN_LAYOUT = load_terrain_from_text(generate_terrain_csv(MAP_ROWS, MAP_COLS))
     settings = load_settings_from_csv()
@@ -391,7 +419,7 @@ def main():
         background_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bg.jpg")
 
     units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
-    dialogues = load_dialogues_from_csv()
+    dialogues = load_dialogues_from_csv(stage.get("dialogues") if stage else None)
     portraits = build_character_portraits(units, invalid_assets)
 
     background_image = load_background_image(background_path, invalid_assets)
@@ -409,6 +437,7 @@ def main():
     rotation = 2
     map_zoom = 1.0
     active_projectile = None
+    ai_pause_until = 0
     rotate_left_button = pygame.Rect(10, 205, 56, 32)
     rotate_right_button = pygame.Rect(76, 205, 56, 32)
     restart_button = pygame.Rect(SCREEN_WIDTH // 2 - 60, SCREEN_HEIGHT // 2 + 40, 120, 40)
@@ -450,54 +479,58 @@ def main():
                             active_unit.has_moved = True
                             active_unit.ct = 0
                             combat_log = f"{active_unit.name} advances toward the enemy and ends the turn."
-                            game_state = "TICKING"
-                            continue
-
-                        active_unit.ct = 0
-                        combat_log = f"{active_unit.name} has no more actions and ends the turn."
-                        game_state = "TICKING"
-                        continue
-
-                    rules = SKILL_REGISTRY[ai_choice["skill"]]
-                    target_unit = ai_choice["target"]
-                    active_unit.mp -= rules["mp_cost"]
-                    active_unit.tp += 20 if rules["mp_cost"] > 0 else 10
-
-                    if ai_choice["skill"] == "Shoot":
-                        start_sx, start_sy = iso_to_screen(active_unit.x, active_unit.y, MAP_DATA[active_unit.y][active_unit.x], origin_x, origin_y, rotation, MAP_COLS, MAP_ROWS, map_zoom)
-                        target_sx, target_sy = iso_to_screen(target_unit.x, target_unit.y, MAP_DATA[target_unit.y][target_unit.x], origin_x, origin_y, rotation, MAP_COLS, MAP_ROWS, map_zoom)
-                        start_pos = (start_sx, start_sy + (TILE_HEIGHT // 2) - 12)
-                        end_pos = (target_sx, target_sy + (TILE_HEIGHT // 2) - 12)
-                        projectile_surf = create_projectile_surface(rules["color"], size=20)
-                        active_projectile = {
-                            "surface": projectile_surf,
-                            "start": start_pos,
-                            "end": end_pos,
-                            "progress": 0.0,
-                            "target": target_unit,
-                            "attacker": active_unit,
-                            "damage": rules["damage"],
-                            "skill": ai_choice["skill"],
-                            "direction": math.degrees(math.atan2(end_pos[1] - start_pos[1], end_pos[0] - start_pos[0])),
-                        }
-                        combat_log = f"{active_unit.name} fires an arrow at {target_unit.name}!"
-                        game_state = "PROJECTILE"
-                    else:
-                        dmg = rules["damage"]
-                        target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
-                        if dmg >= 0:
-                            combat_log = f"{active_unit.name} uses {ai_choice['skill']} on {target_unit.name} for {dmg} damage!"
+                            game_state = "AI_PAUSE"
+                            ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         else:
-                            combat_log = f"{active_unit.name} heals {target_unit.name} for {abs(dmg)} HP!"
-                        if not target_unit.is_alive():
-                            combat_log += f" {target_unit.name} was KO'd!"
-                        if apply_skill_status(ai_choice["skill"], target_unit):
-                            combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
-                        active_unit.has_acted = True
-                        active_unit.ct = 0
-                        game_state = "TICKING"
+                            active_unit.ct = 0
+                            combat_log = f"{active_unit.name} has no more actions and ends the turn."
+                            game_state = "AI_PAUSE"
+                            ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
+                    else:
+                        rules = SKILL_REGISTRY[ai_choice["skill"]]
+                        target_unit = ai_choice["target"]
+                        active_unit.mp -= rules["mp_cost"]
+                        active_unit.tp += 20 if rules["mp_cost"] > 0 else 10
+
+                        if ai_choice["skill"] == "Shoot":
+                            start_sx, start_sy = iso_to_screen(active_unit.x, active_unit.y, MAP_DATA[active_unit.y][active_unit.x], origin_x, origin_y, rotation, MAP_COLS, MAP_ROWS, map_zoom)
+                            target_sx, target_sy = iso_to_screen(target_unit.x, target_unit.y, MAP_DATA[target_unit.y][target_unit.x], origin_x, origin_y, rotation, MAP_COLS, MAP_ROWS, map_zoom)
+                            start_pos = (start_sx, start_sy + (TILE_HEIGHT // 2) - 12)
+                            end_pos = (target_sx, target_sy + (TILE_HEIGHT // 2) - 12)
+                            projectile_surf = create_projectile_surface(rules["color"], size=20)
+                            active_projectile = {
+                                "surface": projectile_surf,
+                                "start": start_pos,
+                                "end": end_pos,
+                                "progress": 0.0,
+                                "target": target_unit,
+                                "attacker": active_unit,
+                                "damage": rules["damage"],
+                                "skill": ai_choice["skill"],
+                                "direction": math.degrees(math.atan2(end_pos[1] - start_pos[1], end_pos[0] - start_pos[0])),
+                            }
+                            combat_log = f"{active_unit.name} fires an arrow at {target_unit.name}!"
+                            game_state = "PROJECTILE"
+                        else:
+                            dmg = rules["damage"]
+                            target_unit.hp = max(0, min(target_unit.max_hp, target_unit.hp - dmg))
+                            if dmg >= 0:
+                                combat_log = f"{active_unit.name} uses {ai_choice['skill']} on {target_unit.name} for {dmg} damage!"
+                            else:
+                                combat_log = f"{active_unit.name} heals {target_unit.name} for {abs(dmg)} HP!"
+                            if not target_unit.is_alive():
+                                combat_log += f" {target_unit.name} was KO'd!"
+                            if apply_skill_status(ai_choice["skill"], target_unit):
+                                combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                            active_unit.has_acted = True
+                            active_unit.ct = 0
+                            game_state = "AI_PAUSE"
+                            ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                 else:
                     game_state = "MENU"
+        elif game_state == "AI_PAUSE":
+            if pygame.time.get_ticks() >= ai_pause_until:
+                game_state = "TICKING"
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -722,6 +755,8 @@ def main():
                                 current_menu = main_menu
                                 menu_index = 1
                                 game_state = "MENU"
+                            elif game_state == "MENU":
+                                running = False
                         elif event.key == pygame.K_SPACE:
                             choice = current_menu[menu_index]
                             if game_state == "MENU":
@@ -838,9 +873,13 @@ def main():
                     combat_log = f"{active_projectile['attacker'].name}'s arrow fell short."
                 active_projectile["attacker"].has_acted = True
                 active_projectile["attacker"].ct = 0
-                current_menu = get_action_menu(active_unit, units)
-                menu_index = 2
-                game_state = "MENU"
+                if is_ai_team(active_projectile["attacker"].team):
+                    game_state = "AI_PAUSE"
+                    ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
+                else:
+                    current_menu = get_action_menu(active_unit, units)
+                    menu_index = 2
+                    game_state = "MENU"
                 active_projectile = None
 
         # --- DRAW ---
@@ -881,7 +920,7 @@ def main():
 
             for u in units:
                 if u.x == x and u.y == y and u.is_alive():
-                    draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=portraits)
+                    draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=portraits, zoom=map_zoom)
 
             if game_state in ["MOVE_SELECT", "TARGET_SELECT"] and x == cursor_x and y == cursor_y:
                 pygame.draw.polygon(screen, CURSOR_COLOR, top_pts, 3)
@@ -955,9 +994,8 @@ def main():
         pygame.display.flip()
         clock.tick(60)
 
-    pygame.quit()
-    sys.exit()
-
 
 if __name__ == '__main__':
     main()
+    pygame.quit()
+    sys.exit()

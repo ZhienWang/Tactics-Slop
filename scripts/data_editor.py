@@ -28,13 +28,6 @@ Agrias,Player,Mage,0,1,10,2,2,100,40,Attack|Fire|Blizzard,100,160,255,
 Gafgarion,Enemy,Archer,5,4,12,3,1,140,10,Attack|Shoot,220,60,60,
 Knight B,Enemy,Knight,4,5,9,2,1,110,0,Attack,180,50,50,"""
 
-TERRAIN_CSV_DUMMY = """C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg
-C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg,C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg"""
-
 GAME_SETTINGS_CSV_DUMMY = """setting_name,value
 background_path,"""
 
@@ -42,9 +35,9 @@ DIALOGUES_CSV_DUMMY = """character,turn,text
 Jesus,1,"Welcome, friends. Our journey begins here."""
 
 TERRAIN_TILE_PATHS = [
-    "C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg",
-    "C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\stone.png",
-    "C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\moss.png",
+    "assets/grass.jpg",
+    "assets/stone.png",
+    "assets/moss.png",
 ]
 
 
@@ -179,6 +172,25 @@ def load_dialogues_from_csv(filepath=None):
     return dialogues
 
 
+def load_stage_manifest(filepath=None):
+    """Parses the stage manifest, resolving each stage's data file paths."""
+    stages = {}
+    filepath = filepath or os.path.join(DATA_DIR, "stages.csv")
+    if not os.path.exists(filepath):
+        return stages
+    with open(filepath, "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            stages[row["node_id"]] = {
+                "title": row["title"],
+                "map_layout": os.path.join(DATA_DIR, row["map_layout"]),
+                "terrain_layout": os.path.join(DATA_DIR, row["terrain_layout"]),
+                "characters": os.path.join(DATA_DIR, row["characters"]),
+                "dialogues": os.path.join(DATA_DIR, row["dialogues"]) if row.get("dialogues") else None,
+            }
+    return stages
+
+
 def load_characters_from_csv(filepath=None):
     """Parses character stats and handles delimited skill lists."""
     character_list = []
@@ -203,6 +215,11 @@ def load_characters_from_csv(filepath=None):
                 "color": (int(row["r"]), int(row["g"]), int(row["b"])),
                 "portrait_path": row.get("portrait_path", "").strip()
             }
+            for attribute in [
+                "physical_attack", "physical_defense", "magic_attack", "magic_defense",
+                "faith", "bravery", "patience", "love",
+            ]:
+                char_data[attribute] = int(row[attribute])
             character_list.append(char_data)
     return character_list
 

@@ -6,6 +6,8 @@ from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT
 def load_image_safe(path, invalid_paths=None):
     if not path:
         return None
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), path)
     if not os.path.exists(path):
         if invalid_paths is not None:
             invalid_paths.append((path, "missing file"))
@@ -96,5 +98,13 @@ def build_character_portraits(units, invalid_assets):
     portraits = {}
     for u in units:
         portrait_img = load_image_safe(u.portrait_path, invalid_assets)
-        portraits[u.name] = portrait_img if portrait_img else create_portrait_surface(u.color, u.name)
+        if portrait_img:
+            if u.name == "Centurion Marcus":
+                gold_tint = pygame.Surface(portrait_img.get_size(), pygame.SRCALPHA)
+                gold_tint.fill((255, 190, 40, 255))
+                portrait_img = portrait_img.copy()
+                portrait_img.blit(gold_tint, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            portraits[u.name] = pygame.transform.smoothscale(portrait_img, (140, 70))
+        else:
+            portraits[u.name] = create_portrait_surface(u.color, u.name)
     return portraits
