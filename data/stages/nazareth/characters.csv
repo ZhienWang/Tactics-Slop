@@ -5,10 +5,10 @@ Andrew,Player,Apostle,2,0,11,3,1,15,Preach|Defend|Fish net,70,140,255,assets/and
 James,Player,Apostle,1,0,13,3,1,10,Preach|Slash,60,130,240,assets/james_the_greater.png,12,16,118,41,26,45
 John,Player,Apostle,3,0,11,3,1,50,Preach|Heal,80,150,255,assets/john.png,31,26,113,19,13,34
 Philip,Player,Apostle,0,2,10,2,1,30,Preach|First Aid,50,120,240,assets/philip.png,32,27,138,20,36,31
-Bartholomew,Player,Apostle,2,2,11,3,1,0,Preach,60,130,240,assets/bartholomew.png,14,20,128,30,24,30
-Matthew,Player,Apostle,1,2,10,2,1,25,Preach,50,120,240,assets/matthew.png,38,32,120,41,32,28
-Thomas,Player,Apostle,3,2,12,3,1,0,Preach,60,130,240,assets/thomas.png,22,14,132,16,25,27
-James Minor,Player,Apostle,0,1,11,3,1,0,Preach,50,120,240,assets/james_the_lesser.png,15,20,119,29,32,25
+Bartholomew,Player,Apostle,2,2,11,3,1,0,Preach|Slash,60,130,240,assets/bartholomew.png,14,20,128,30,24,30
+Matthew,Player,Apostle,1,2,10,2,1,25,Preach|Defend,50,120,240,assets/matthew.png,38,32,120,41,32,28
+Thomas,Player,Apostle,3,2,12,3,1,0,Preach|First Aid,60,130,240,assets/thomas.png,22,14,132,16,25,27
+James Minor,Player,Apostle,0,1,11,3,1,0,Preach|Fish net,50,120,240,assets/james_the_lesser.png,15,20,119,29,32,25
 Thaddeus,Player,Apostle,2,3,10,2,1,20,Preach|First Aid,50,120,240,assets/jude_thaddeus.png,36,36,130,30,36,31
 Simon,Player,Apostle,3,1,11,3,1,0,Preach|Slash,60,130,240,assets/simon_the_zealot.png,8,14,127,16,19,4
 Legionnaire 1,Enemy,Soldier,6,6,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,18,20,100,24,20,18
