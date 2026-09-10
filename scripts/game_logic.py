@@ -71,6 +71,8 @@ class Unit:
         self.guarded = False
         self.disabled = False
         self.removed = False
+        self.removed_at = None
+        self.converted_at = None
         self.magic_attack = data.get("magic_attack", 25)
         self.magic_defense = data.get("magic_defense", 25)
         self.faith = data.get("faith", 25)
@@ -173,6 +175,24 @@ def push_unit_away(caster, target, units_list, tiles=SHOVE_DISTANCE):
     target.x, target.y = x, y
 
 
+DEATH_FADE_MS = 500
+CONVERT_FLASH_MS = 700
+
+
+def draw_conversion_flash(surface, cx, cy, elapsed, duration=CONVERT_FLASH_MS):
+    progress = max(0.0, min(1.0, elapsed / duration))
+    radius = int(14 + progress * 34)
+    alpha = max(0, 255 - int(255 * progress))
+    ring = pygame.Surface((radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA)
+    pygame.draw.circle(ring, (255, 215, 0, alpha), (radius + 2, radius + 2), radius, 3)
+    surface.blit(ring, (cx - radius - 2, cy - radius - 2))
+
+
+def kill_unit(target):
+    target.removed = True
+    target.removed_at = pygame.time.get_ticks()
+
+
 def skill_status_message(skill_name, caster, target):
     if skill_name == "Shove":
         return f"{caster.name} shoves {target.name} back, leaving them reeling!"
@@ -214,6 +234,7 @@ def apply_preach(preacher, target):
         target.team = "Player"
         target.color = (70, 140, 255)
         target.disabled = True
+        target.converted_at = pygame.time.get_ticks()
         return f"{target.name}'s faith is complete! They lay down their arms and join the Player team."
     return f"{preacher.name} preaches to {target.name}, raising their faith to {round(target.faith)}!"
 
@@ -488,23 +509,30 @@ UNIT_SLOT_WIDTH = 140
 UNIT_SLOT_HEIGHT = 70
 
 
-def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, in_water=False):
+def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, in_water=False, alpha=255):
     cx, cy = sx, sy + (TILE_HEIGHT // 2) - 12
     if in_water:
         cy += round(6 * zoom)
-    font = pygame.font.SysFont(None, 14)
-    tag = "P" if unit.team == "Player" else "E"
-    surface.blit(font.render(tag, True, (255, 255, 255)), (cx - 4, cy - 5))
-    pygame.draw.rect(surface, (60, 50, 10), (cx - 15, cy - 22, 30, 4))
-    faith_pct = max(0, min(1, unit.faith / FAITH_CAP))
-    pygame.draw.rect(surface, (255, 215, 0), (cx - 15, cy - 22, int(30 * faith_pct), 4))
 
     cell_w = UNIT_SLOT_WIDTH * zoom * UNIT_CELL_FILL
     cell_h = UNIT_SLOT_HEIGHT * zoom * UNIT_CELL_FILL
 
+    # Fading units (death animation) skip the tag/faith-bar/water-ripple
+    # detail and just fade the portrait/silhouette out on its own - a dying
+    # unit doesn't need its HUD chrome, and this keeps the fade path simple.
+    fading = alpha < 255
+
+    if not fading:
+        font = pygame.font.SysFont(None, 14)
+        tag = "P" if unit.team == "Player" else "E"
+        surface.blit(font.render(tag, True, (255, 255, 255)), (cx - 4, cy - 5))
+        pygame.draw.rect(surface, (60, 50, 10), (cx - 15, cy - 22, 30, 4))
+        faith_pct = max(0, min(1, unit.faith / FAITH_CAP))
+        pygame.draw.rect(surface, (255, 215, 0), (cx - 15, cy - 22, int(30 * faith_pct), 4))
+
     water_line = cy + round(10 * zoom)
     previous_clip = None
-    if in_water:
+    if in_water and not fading:
         previous_clip = surface.get_clip()
         surface.set_clip(pygame.Rect(0, 0, surface.get_width(), max(0, water_line)))
 
@@ -514,19 +542,28 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
         scale = min(cell_w / pw, cell_h / ph)
         fit_size = (max(1, round(pw * scale)), max(1, round(ph * scale)))
         fitted_portrait = pygame.transform.smoothscale(portrait, fit_size)
+        if fading:
+            fitted_portrait.set_alpha(alpha)
         portrait_rect = fitted_portrait.get_rect(center=(cx, cy))
         surface.blit(fitted_portrait, portrait_rect)
     else:
         radius = max(1, round(min(cell_w, cell_h) / 2))
-        pygame.draw.circle(surface, unit.color, (cx, cy), radius)
-        pygame.draw.circle(surface, (255, 255, 255), (cx, cy), radius, 2)
+        if fading:
+            silhouette = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(silhouette, unit.color, (radius, radius), radius)
+            pygame.draw.circle(silhouette, (255, 255, 255), (radius, radius), radius, 2)
+            silhouette.set_alpha(alpha)
+            surface.blit(silhouette, (cx - radius, cy - radius))
+        else:
+            pygame.draw.circle(surface, unit.color, (cx, cy), radius)
+            pygame.draw.circle(surface, (255, 255, 255), (cx, cy), radius, 2)
 
-    if in_water:
+    if in_water and not fading:
         surface.set_clip(previous_clip)
         ripple_w = max(10, round(cell_w * 0.5))
         pygame.draw.ellipse(surface, (150, 210, 240), (cx - ripple_w // 2, water_line - 4, ripple_w, 8), 2)
 
-    if is_active:
+    if is_active and not fading:
         pygame.draw.polygon(surface, (255, 60, 60), [(cx, cy - 28), (cx - 5, cy - 35), (cx + 5, cy - 35)])
 
 
@@ -710,7 +747,7 @@ async def main(stage=None):
                                 target_unit.guarded = False
                                 combat_log = f"{target_unit.name} guards against {active_unit.name}'s {ai_choice['skill']} and holds their ground!"
                             else:
-                                target_unit.removed = True
+                                kill_unit(target_unit)
                                 if attack_sound:
                                     attack_sound.play()
                                 combat_log = f"{active_unit.name} strikes down {target_unit.name} with {ai_choice['skill']}!"
@@ -910,7 +947,7 @@ async def main(stage=None):
                                             target_unit.guarded = False
                                             combat_log = f"{target_unit.name} guards against {active_unit.name}'s {selected_skill} and holds their ground!"
                                         else:
-                                            target_unit.removed = True
+                                            kill_unit(target_unit)
                                             if attack_sound:
                                                 attack_sound.play()
                                             combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
@@ -1075,7 +1112,7 @@ async def main(stage=None):
                                         target_unit.guarded = False
                                         combat_log = f"{target_unit.name} guards against {active_unit.name}'s {selected_skill} and holds their ground!"
                                     else:
-                                        target_unit.removed = True
+                                        kill_unit(target_unit)
                                         if attack_sound:
                                             attack_sound.play()
                                         combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
@@ -1105,7 +1142,7 @@ async def main(stage=None):
                         target_unit.guarded = False
                         combat_log = f"{target_unit.name} guards against {active_projectile['attacker'].name}'s {active_projectile['skill']} and holds their ground!"
                     else:
-                        target_unit.removed = True
+                        kill_unit(target_unit)
                         combat_log = f"{active_projectile['attacker'].name}'s {active_projectile['skill']} strikes down {target_unit.name}!"
                 else:
                     combat_log = f"{active_projectile['attacker'].name}'s arrow fell short."
@@ -1157,8 +1194,20 @@ async def main(stage=None):
                 pygame.draw.polygon(screen, (255, 255, 255), top_pts, 2)
 
             for u in units:
-                if u.x == x and u.y == y and u.is_alive():
+                if u.x != x or u.y != y:
+                    continue
+                if u.is_alive():
                     draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=portraits, zoom=map_zoom, in_water=is_water_tile(terrain_path))
+                    if u.converted_at is not None:
+                        elapsed = pygame.time.get_ticks() - u.converted_at
+                        if elapsed < CONVERT_FLASH_MS:
+                            flash_cy = sy + (TILE_HEIGHT // 2) - 12 + (round(6 * map_zoom) if is_water_tile(terrain_path) else 0)
+                            draw_conversion_flash(screen, sx, flash_cy, elapsed)
+                elif u.removed_at is not None:
+                    elapsed = pygame.time.get_ticks() - u.removed_at
+                    if elapsed < DEATH_FADE_MS:
+                        fade_alpha = max(0, 255 - int(255 * elapsed / DEATH_FADE_MS))
+                        draw_unit(screen, sx, sy, u, portraits=portraits, zoom=map_zoom, alpha=fade_alpha)
 
             if game_state in ["MOVE_SELECT", "TARGET_SELECT"] and x == cursor_x and y == cursor_y:
                 pygame.draw.polygon(screen, CURSOR_COLOR, top_pts, 3)
