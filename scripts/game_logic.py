@@ -68,6 +68,7 @@ class Unit:
         self.has_acted = False
         self.snared_turns = 0
         self.stunned_turns = 0
+        self.guarded = False
         self.disabled = False
         self.removed = False
         self.magic_attack = data.get("magic_attack", 25)
@@ -132,11 +133,17 @@ def get_skill_targets(unit, skill_name, units_list=None):
         for y in range(MAP_ROWS):
             distance = abs(unit.x - x) + abs(unit.y - y)
             if distance <= max_range:
-                if distance == 0 and skill_data["type"] != "Heal":
+                if distance == 0 and not (skill_data["type"] == "Heal" or skill_name == "Defend"):
                     continue
                 if skill_data["type"] == "Status" and units_list is not None:
                     target = next((u for u in units_list if u.x == x and u.y == y and u.is_alive()), None)
                     if target is None or target.team == unit.team:
+                        continue
+                if skill_data["type"] == "Support" and units_list is not None:
+                    target = next((u for u in units_list if u.x == x and u.y == y and u.is_alive()), None)
+                    if target is None or target.team != unit.team:
+                        continue
+                    if skill_name == "Command" and target == unit:
                         continue
                 targets.append((x, y))
     return targets
@@ -144,6 +151,7 @@ def get_skill_targets(unit, skill_name, units_list=None):
 
 SHOVE_CHANCE = 0.5
 SHOVE_DISTANCE = 2
+COMMAND_CT_BOOST = 40
 
 
 def push_unit_away(caster, target, units_list, tiles=SHOVE_DISTANCE):
@@ -165,6 +173,18 @@ def push_unit_away(caster, target, units_list, tiles=SHOVE_DISTANCE):
     target.x, target.y = x, y
 
 
+def skill_status_message(skill_name, caster, target):
+    if skill_name == "Shove":
+        return f"{caster.name} shoves {target.name} back, leaving them reeling!"
+    if skill_name == "Command":
+        return f"{caster.name} commands {target.name}, hastening them into action!"
+    if skill_name == "Defend":
+        if caster == target:
+            return f"{caster.name} braces and stands firm, ready to guard!"
+        return f"{caster.name} calls {target.name} to stand firm and guard!"
+    return f"{caster.name} snares {target.name} with Fish net for 2 turns!"
+
+
 def apply_skill_status(skill_name, caster, target, units_list):
     if skill_name == "Fish net":
         target.snared_turns = 2
@@ -174,6 +194,12 @@ def apply_skill_status(skill_name, caster, target, units_list):
             return False
         target.stunned_turns = 1
         push_unit_away(caster, target, units_list)
+        return True
+    if skill_name == "Command":
+        target.ct = min(100, target.ct + COMMAND_CT_BOOST)
+        return True
+    if skill_name == "Defend":
+        target.guarded = True
         return True
     return False
 
@@ -321,6 +347,25 @@ def choose_ai_action(unit, units_list):
                     "skill": skill_name,
                     "target": ally,
                     "priority": (ally.faith, distance),
+                }
+                if best_choice is None or candidate["priority"] < best_choice["priority"]:
+                    best_choice = candidate
+            continue
+
+        if skill_data["type"] == "Support":
+            for ally in allies:
+                distance = abs(unit.x - ally.x) + abs(unit.y - ally.y)
+                if distance > skill_data["range"]:
+                    continue
+                if skill_name == "Defend" and ally.guarded:
+                    continue
+                if skill_name == "Command" and ally == unit:
+                    continue
+                candidate = {
+                    "action": "skill",
+                    "skill": skill_name,
+                    "target": ally,
+                    "priority": (ally.ct, distance),
                 }
                 if best_choice is None or candidate["priority"] < best_choice["priority"]:
                     best_choice = candidate
@@ -661,20 +706,21 @@ async def main(stage=None):
                             game_state = "AI_PAUSE"
                             ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         elif rules["type"] == "Physical":
-                            target_unit.removed = True
-                            if attack_sound:
-                                attack_sound.play()
-                            combat_log = f"{active_unit.name} strikes down {target_unit.name} with {ai_choice['skill']}!"
+                            if target_unit.guarded:
+                                target_unit.guarded = False
+                                combat_log = f"{target_unit.name} guards against {active_unit.name}'s {ai_choice['skill']} and holds their ground!"
+                            else:
+                                target_unit.removed = True
+                                if attack_sound:
+                                    attack_sound.play()
+                                combat_log = f"{active_unit.name} strikes down {target_unit.name} with {ai_choice['skill']}!"
                             active_unit.has_acted = True
                             active_unit.ct = 0
                             game_state = "AI_PAUSE"
                             ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         else:
                             if apply_skill_status(ai_choice["skill"], active_unit, target_unit, units):
-                                if ai_choice["skill"] == "Shove":
-                                    combat_log = f"{active_unit.name} shoves {target_unit.name} back, leaving them reeling!"
-                                else:
-                                    combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                                combat_log = skill_status_message(ai_choice["skill"], active_unit, target_unit)
                             else:
                                 combat_log = f"{active_unit.name} uses {ai_choice['skill']} on {target_unit.name}."
                             active_unit.has_acted = True
@@ -860,16 +906,17 @@ async def main(stage=None):
                                     elif target_unit and rules["type"] == "Heal":
                                         combat_log = apply_preach(active_unit, target_unit)
                                     elif target_unit and rules["type"] == "Physical":
-                                        target_unit.removed = True
-                                        if attack_sound:
-                                            attack_sound.play()
-                                        combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
+                                        if target_unit.guarded:
+                                            target_unit.guarded = False
+                                            combat_log = f"{target_unit.name} guards against {active_unit.name}'s {selected_skill} and holds their ground!"
+                                        else:
+                                            target_unit.removed = True
+                                            if attack_sound:
+                                                attack_sound.play()
+                                            combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
                                     elif target_unit:
                                         if apply_skill_status(selected_skill, active_unit, target_unit, units):
-                                            if selected_skill == "Shove":
-                                                combat_log = f"{active_unit.name} shoves {target_unit.name} back, leaving them reeling!"
-                                            else:
-                                                combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                                            combat_log = skill_status_message(selected_skill, active_unit, target_unit)
                                         else:
                                             combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name}."
                                     else:
@@ -1024,16 +1071,17 @@ async def main(stage=None):
                                 elif target_unit and rules["type"] == "Heal":
                                     combat_log = apply_preach(active_unit, target_unit)
                                 elif target_unit and rules["type"] == "Physical":
-                                    target_unit.removed = True
-                                    if attack_sound:
-                                        attack_sound.play()
-                                    combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
+                                    if target_unit.guarded:
+                                        target_unit.guarded = False
+                                        combat_log = f"{target_unit.name} guards against {active_unit.name}'s {selected_skill} and holds their ground!"
+                                    else:
+                                        target_unit.removed = True
+                                        if attack_sound:
+                                            attack_sound.play()
+                                        combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
                                 elif target_unit:
                                     if apply_skill_status(selected_skill, active_unit, target_unit, units):
-                                        if selected_skill == "Shove":
-                                            combat_log = f"{active_unit.name} shoves {target_unit.name} back, leaving them reeling!"
-                                        else:
-                                            combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                                        combat_log = skill_status_message(selected_skill, active_unit, target_unit)
                                     else:
                                         combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name}."
                                 else:
@@ -1053,8 +1101,12 @@ async def main(stage=None):
             if active_projectile["progress"] >= 1.0:
                 target_unit = active_projectile["target"]
                 if target_unit and target_unit.is_alive():
-                    target_unit.removed = True
-                    combat_log = f"{active_projectile['attacker'].name}'s {active_projectile['skill']} strikes down {target_unit.name}!"
+                    if target_unit.guarded:
+                        target_unit.guarded = False
+                        combat_log = f"{target_unit.name} guards against {active_projectile['attacker'].name}'s {active_projectile['skill']} and holds their ground!"
+                    else:
+                        target_unit.removed = True
+                        combat_log = f"{active_projectile['attacker'].name}'s {active_projectile['skill']} strikes down {target_unit.name}!"
                 else:
                     combat_log = f"{active_projectile['attacker'].name}'s arrow fell short."
                 active_projectile["attacker"].has_acted = True
