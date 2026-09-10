@@ -196,6 +196,17 @@ def kill_unit(target):
     target.removed_at = pygame.time.get_ticks()
 
 
+def resolve_physical_hit(attacker, target, skill_name):
+    """Resolve a Physical-type skill's hit on a target. A guarded target
+    blocks it (consuming the guard) instead of being removed. Returns
+    (killed, message)."""
+    if target.guarded:
+        target.guarded = False
+        return False, f"{target.name} guards against {attacker.name}'s {skill_name} and holds their ground!"
+    kill_unit(target)
+    return True, f"{attacker.name} strikes down {target.name} with {skill_name}!"
+
+
 def skill_status_message(skill_name, caster, target):
     if skill_name == "Shove":
         return f"{caster.name} shoves {target.name} back, leaving them reeling!"
@@ -769,14 +780,9 @@ async def main(stage=None):
                             game_state = "AI_PAUSE"
                             ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         elif rules["type"] == "Physical":
-                            if target_unit.guarded:
-                                target_unit.guarded = False
-                                combat_log = f"{target_unit.name} guards against {active_unit.name}'s {ai_choice['skill']} and holds their ground!"
-                            else:
-                                kill_unit(target_unit)
-                                if attack_sound:
-                                    attack_sound.play()
-                                combat_log = f"{active_unit.name} strikes down {target_unit.name} with {ai_choice['skill']}!"
+                            killed, combat_log = resolve_physical_hit(active_unit, target_unit, ai_choice["skill"])
+                            if killed and attack_sound:
+                                attack_sound.play()
                             active_unit.has_acted = True
                             active_unit.ct = 0
                             game_state = "AI_PAUSE"
@@ -969,14 +975,9 @@ async def main(stage=None):
                                     elif target_unit and rules["type"] == "Heal":
                                         combat_log = apply_preach(active_unit, target_unit)
                                     elif target_unit and rules["type"] == "Physical":
-                                        if target_unit.guarded:
-                                            target_unit.guarded = False
-                                            combat_log = f"{target_unit.name} guards against {active_unit.name}'s {selected_skill} and holds their ground!"
-                                        else:
-                                            kill_unit(target_unit)
-                                            if attack_sound:
-                                                attack_sound.play()
-                                            combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
+                                        killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill)
+                                        if killed and attack_sound:
+                                            attack_sound.play()
                                     elif target_unit:
                                         if apply_skill_status(selected_skill, active_unit, target_unit, units):
                                             combat_log = skill_status_message(selected_skill, active_unit, target_unit)
@@ -1134,14 +1135,9 @@ async def main(stage=None):
                                 elif target_unit and rules["type"] == "Heal":
                                     combat_log = apply_preach(active_unit, target_unit)
                                 elif target_unit and rules["type"] == "Physical":
-                                    if target_unit.guarded:
-                                        target_unit.guarded = False
-                                        combat_log = f"{target_unit.name} guards against {active_unit.name}'s {selected_skill} and holds their ground!"
-                                    else:
-                                        kill_unit(target_unit)
-                                        if attack_sound:
-                                            attack_sound.play()
-                                        combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
+                                    killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill)
+                                    if killed and attack_sound:
+                                        attack_sound.play()
                                 elif target_unit:
                                     if apply_skill_status(selected_skill, active_unit, target_unit, units):
                                         combat_log = skill_status_message(selected_skill, active_unit, target_unit)
@@ -1164,12 +1160,7 @@ async def main(stage=None):
             if active_projectile["progress"] >= 1.0:
                 target_unit = active_projectile["target"]
                 if target_unit and target_unit.is_alive():
-                    if target_unit.guarded:
-                        target_unit.guarded = False
-                        combat_log = f"{target_unit.name} guards against {active_projectile['attacker'].name}'s {active_projectile['skill']} and holds their ground!"
-                    else:
-                        kill_unit(target_unit)
-                        combat_log = f"{active_projectile['attacker'].name}'s {active_projectile['skill']} strikes down {target_unit.name}!"
+                    _, combat_log = resolve_physical_hit(active_projectile["attacker"], target_unit, active_projectile["skill"])
                 else:
                     combat_log = f"{active_projectile['attacker'].name}'s arrow fell short."
                 active_projectile["attacker"].has_acted = True

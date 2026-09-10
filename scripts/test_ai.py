@@ -1,7 +1,11 @@
+import glob
+import os
 import random
 
+import pytest
+
 from scripts import game_logic
-from scripts.data_editor import load_dialogues_from_csv
+from scripts.data_editor import load_dialogues_from_csv, load_skills_from_csv, load_characters_from_csv
 
 
 def make_unit(name, team, x, y, faith, mp, skills):
@@ -177,3 +181,197 @@ def test_shove_on_miss_leaves_target_unaffected():
     assert hit is False
     assert (peter.x, peter.y) == (3, 2)
     assert peter.stunned_turns == 0
+
+
+# --- Command / Defend ---
+
+def test_command_boosts_target_ct_capped_at_100():
+    officer = make_unit("Centurion", "Enemy", 0, 0, 0, 0, ["Command"])
+    soldier = make_unit("Legionnaire", "Enemy", 0, 1, 0, 0, [])
+    soldier.ct = 20
+
+    hit = game_logic.apply_skill_status("Command", officer, soldier, [officer, soldier])
+
+    assert hit is True
+    assert soldier.ct == 20 + game_logic.COMMAND_CT_BOOST
+
+    soldier.ct = 90
+    game_logic.apply_skill_status("Command", officer, soldier, [officer, soldier])
+    assert soldier.ct == 100  # clamped, doesn't overshoot
+
+
+def test_defend_sets_guarded_flag_on_target():
+    andrew = make_unit("Andrew", "Player", 0, 0, 0, 0, ["Defend"])
+    james = make_unit("James", "Player", 0, 1, 0, 0, [])
+    assert james.guarded is False
+
+    hit = game_logic.apply_skill_status("Defend", andrew, james, [andrew, james])
+
+    assert hit is True
+    assert james.guarded is True
+
+
+def test_resolve_physical_hit_kills_unguarded_target():
+    attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
+    target = make_unit("Peter", "Player", 0, 1, 0, 0, [])
+
+    killed, message = game_logic.resolve_physical_hit(attacker, target, "Slash")
+
+    assert killed is True
+    assert not target.is_alive()
+    assert target.removed_at is not None
+    assert "strikes down" in message
+
+
+def test_resolve_physical_hit_blocked_by_guard_and_consumes_it():
+    attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
+    target = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
+    target.guarded = True
+
+    killed, message = game_logic.resolve_physical_hit(attacker, target, "Slash")
+
+    assert killed is False
+    assert target.is_alive()
+    assert target.guarded is False  # guard is a one-time block, consumed either way
+    assert "guards against" in message
+
+
+def test_choose_ai_action_targets_ally_with_support_skill():
+    game_logic.SKILL_REGISTRY = {
+        "Command": {"mp_cost": 0, "range": 4, "damage": 0, "type": "Support"},
+    }
+    officer = make_unit("Centurion", "Enemy", 0, 0, 0, 0, ["Command"])
+    soldier = make_unit("Legionnaire", "Enemy", 0, 1, 0, 0, [])
+    enemy_of_officer = make_unit("Peter", "Player", 0, 1, 0, 0, [])
+
+    result = game_logic.choose_ai_action(officer, [officer, soldier, enemy_of_officer])
+
+    assert result["action"] == "skill"
+    assert result["target"].name == "Legionnaire"  # never the opposing-team unit
+
+
+def test_choose_ai_action_command_never_targets_self():
+    game_logic.SKILL_REGISTRY = {
+        "Command": {"mp_cost": 0, "range": 4, "damage": 0, "type": "Support"},
+    }
+    officer = make_unit("Centurion", "Enemy", 0, 0, 0, 0, ["Command"])
+
+    result = game_logic.choose_ai_action(officer, [officer])
+
+    assert result["action"] == "skip"
+
+
+def test_choose_ai_action_defend_skips_already_guarded_allies():
+    game_logic.SKILL_REGISTRY = {
+        "Defend": {"mp_cost": 0, "range": 4, "damage": 0, "type": "Support"},
+    }
+    # Andrew is already guarded too, so he isn't the (closer) self-target
+    # candidate - this isolates the guarded_ally-vs-unguarded_ally choice.
+    andrew = make_unit("Andrew", "Player", 0, 0, 0, 0, ["Defend"])
+    andrew.guarded = True
+    guarded_ally = make_unit("James", "Player", 0, 1, 0, 0, [])
+    guarded_ally.guarded = True
+    unguarded_ally = make_unit("John", "Player", 0, 2, 0, 0, [])
+
+    result = game_logic.choose_ai_action(andrew, [andrew, guarded_ally, unguarded_ally])
+
+    assert result["action"] == "skill"
+    assert result["target"].name == "John"
+
+
+def test_choose_ai_action_defend_prefers_self_when_available():
+    game_logic.SKILL_REGISTRY = {
+        "Defend": {"mp_cost": 0, "range": 4, "damage": 0, "type": "Support"},
+    }
+    andrew = make_unit("Andrew", "Player", 0, 0, 0, 0, ["Defend"])
+    ally = make_unit("James", "Player", 0, 2, 0, 0, [])
+
+    result = game_logic.choose_ai_action(andrew, [andrew, ally])
+
+    assert result["action"] == "skill"
+    assert result["target"].name == "Andrew"  # closer (distance 0) than James
+
+
+def test_get_skill_targets_support_skill_restricted_to_allies():
+    game_logic.MAP_DATA = [[0 for _ in range(5)] for _ in range(5)]
+    game_logic.MAP_ROWS = 5
+    game_logic.MAP_COLS = 5
+    game_logic.SKILL_REGISTRY = {
+        "Command": {"mp_cost": 0, "range": 4, "damage": 0, "type": "Support"},
+    }
+    officer = make_unit("Centurion", "Enemy", 2, 2, 0, 0, ["Command"])
+    ally = make_unit("Legionnaire", "Enemy", 2, 3, 0, 0, [])
+    foe = make_unit("Peter", "Player", 2, 1, 0, 0, [])
+
+    targets = game_logic.get_skill_targets(officer, "Command", [officer, ally, foe])
+
+    assert (2, 3) in targets  # ally tile
+    assert (2, 1) not in targets  # enemy tile excluded
+    assert (2, 2) not in targets  # Command can't self-target
+
+
+def test_get_skill_targets_defend_allows_self_target():
+    game_logic.MAP_DATA = [[0 for _ in range(5)] for _ in range(5)]
+    game_logic.MAP_ROWS = 5
+    game_logic.MAP_COLS = 5
+    game_logic.SKILL_REGISTRY = {
+        "Defend": {"mp_cost": 0, "range": 1, "damage": 0, "type": "Support"},
+    }
+    andrew = make_unit("Andrew", "Player", 2, 2, 0, 0, ["Defend"])
+
+    targets = game_logic.get_skill_targets(andrew, "Defend", [andrew])
+
+    assert (2, 2) in targets
+
+
+# --- Faith conversion mechanic (FAITH_CAP rebalance) ---
+
+def test_apply_preach_does_not_convert_below_faith_cap():
+    weak_preacher = make_unit("Thomas", "Player", 0, 0, 10, 0, [])  # small gain (2.0)
+    judas = make_unit("Judas", "Enemy", 0, 1, 50, 0, [])  # far below the cap
+
+    game_logic.apply_preach(weak_preacher, judas)
+
+    assert judas.team == "Enemy"
+    assert judas.faith < game_logic.FAITH_CAP
+
+
+def test_apply_preach_converts_and_flashes_at_faith_cap():
+    jesus = make_unit("Jesus", "Player", 0, 0, 200, 0, [])
+    judas = make_unit("Judas", "Enemy", 0, 1, game_logic.FAITH_CAP - 1, 0, [])
+
+    message = game_logic.apply_preach(jesus, judas)
+
+    assert judas.team == "Player"
+    assert judas.faith == game_logic.FAITH_CAP
+    assert judas.converted_at is not None
+    assert "join the Player team" in message
+
+
+def test_apply_preach_gain_scales_with_preacher_faith():
+    weak_preacher = make_unit("Weak", "Player", 0, 0, 50, 0, [])
+    strong_preacher = make_unit("Strong", "Player", 0, 0, 200, 0, [])
+    target_a = make_unit("Target A", "Enemy", 0, 1, 0, 0, [])
+    target_b = make_unit("Target B", "Enemy", 0, 1, 0, 0, [])
+
+    game_logic.apply_preach(weak_preacher, target_a)
+    game_logic.apply_preach(strong_preacher, target_b)
+
+    assert target_b.faith > target_a.faith
+    assert target_a.faith == pytest.approx(weak_preacher.faith * game_logic.FAITH_TRANSFER_RATE)
+    assert target_b.faith == pytest.approx(strong_preacher.faith * game_logic.FAITH_TRANSFER_RATE)
+
+
+# --- Data integrity: every character skill must exist in skills.csv ---
+# (regression test for the "Chakra" skill that was referenced by three
+# apostles but never migrated into skills.csv - selecting it would have
+# crashed the game with a KeyError)
+
+def test_every_character_skill_is_registered_in_skills_csv():
+    registered = set(load_skills_from_csv().keys())
+
+    files = [os.path.join("data", "characters.csv")] + glob.glob(os.path.join("data", "stages", "*", "characters.csv"))
+    for path in files:
+        for char in load_characters_from_csv(path):
+            unknown = set(char["skills"]) - registered
+            assert not unknown, f"{char['name']} in {path} uses unregistered skill(s): {unknown}"
