@@ -11,6 +11,6 @@ Thomas,Player,Apostle,3,2,12,3,1,0,Preach,60,130,240,assets/thomas.png,22,14,132
 James Minor,Player,Apostle,0,1,11,3,1,0,Preach,50,120,240,assets/james_the_lesser.png,15,20,119,29,32,25
 Thaddeus,Player,Apostle,2,3,10,2,1,20,Preach|Chakra,50,120,240,assets/jude_thaddeus.png,36,36,130,30,36,31
 Simon,Player,Apostle,3,1,11,3,1,0,Preach|Slash,60,130,240,assets/simon_the_zealot.png,8,14,127,16,19,4
-Legionnaire 1,Enemy,Soldier,7,7,11,3,1,0,Preach,200,50,50,assets/legionaire.png,16,20,100,22,19,20
-Legionnaire 2,Enemy,Soldier,8,7,11,3,1,0,Preach,200,50,50,assets/legionaire.png,20,24,100,25,21,16
-Legionnaire 3,Enemy,Soldier,7,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,14,18,100,28,15,24
+Legionnaire 1,Enemy,Soldier,7,7,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,16,20,100,22,19,20
+Legionnaire 2,Enemy,Soldier,8,7,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,20,24,100,25,21,16
+Legionnaire 3,Enemy,Soldier,7,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,14,18,100,28,15,24

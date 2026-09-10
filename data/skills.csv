@@ -8,3 +8,4 @@ Defend,0,1,0,Support,100,200,100
 Slash,0,1,45,Physical,255,100,50
 Command,5,4,0,Support,200,100,50
 Fish net,0,3,0,Status,255,255,255
+Shove,0,1,0,Status,220,40,40

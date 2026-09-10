@@ -1,6 +1,7 @@
 import os
 import sys
 import math
+import asyncio
 import pygame
 
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, CURSOR_COLOR
@@ -206,7 +207,7 @@ def draw_unit_detail(surface, font, unit, portraits):
     surface.blit(font.render("[Enter / Esc] Back", True, TEXT_DIM), (mx + 16, my + height - 28))
 
 
-def main():
+async def main():
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     required_files = ["map_layout.csv", "skills.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
     if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
@@ -248,8 +249,8 @@ def main():
 
     menu_button = pygame.Rect(SCREEN_WIDTH - 130, 20, 110, 34)
 
-    def enter_battle(node_id):
-        run_battle(stage=stage_manifest.get(node_id))
+    async def enter_battle(node_id):
+        await run_battle(stage=stage_manifest.get(node_id))
         pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Tactics Engine: World Map")
 
@@ -270,7 +271,7 @@ def main():
                     clicked_node = node_at_pos(event.pos)
                     if clicked_node == current_node:
                         if NODES[current_node]["type"] == "stage":
-                            enter_battle(current_node)
+                            await enter_battle(current_node)
                     elif clicked_node is not None and clicked_node in NODES[current_node]["connections"]:
                         transition_from = current_node
                         transition_to = clicked_node
@@ -323,7 +324,7 @@ def main():
                             state = STATE_TRANSITION
                     elif event.key == pygame.K_RETURN:
                         if NODES[current_node]["type"] == "stage":
-                            enter_battle(current_node)
+                            await enter_battle(current_node)
 
                 elif state == STATE_MENU:
                     if event.key == pygame.K_UP:
@@ -401,9 +402,10 @@ def main():
             draw_unit_detail(screen, font, selected_unit, portraits)
 
         pygame.display.flip()
+        await asyncio.sleep(0)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
     pygame.quit()
     sys.exit()

@@ -1,3 +1,5 @@
+import random
+
 from scripts import game_logic
 from scripts.data_editor import load_dialogues_from_csv
 
@@ -129,6 +131,38 @@ def test_fish_net_targets_enemies_and_prevents_movement():
     assert (2, 1) in targets
     assert (1, 2) not in targets
 
-    game_logic.apply_skill_status("Fish net", enemy)
+    game_logic.apply_skill_status("Fish net", peter, enemy, [peter, ally, enemy])
     assert enemy.snared_turns == 2
     assert not game_logic.can_unit_move(enemy, [peter, ally, enemy])
+
+
+def test_shove_on_hit_stuns_and_pushes_target_two_tiles():
+    game_logic.MAP_DATA = [[0 for _ in range(6)] for _ in range(6)]
+    game_logic.MAP_ROWS = 6
+    game_logic.MAP_COLS = 6
+
+    legionnaire = make_unit("Legionnaire", "Enemy", 2, 2, 0, 0, ["Shove"])
+    peter = make_unit("Peter", "Player", 3, 2, 0, 0, [])
+
+    random.seed(1)  # first draw is a hit at the current SHOVE_CHANCE
+    hit = game_logic.apply_skill_status("Shove", legionnaire, peter, [legionnaire, peter])
+
+    assert hit is True
+    assert (peter.x, peter.y) == (5, 2)
+    assert peter.stunned_turns == 1
+
+
+def test_shove_on_miss_leaves_target_unaffected():
+    game_logic.MAP_DATA = [[0 for _ in range(6)] for _ in range(6)]
+    game_logic.MAP_ROWS = 6
+    game_logic.MAP_COLS = 6
+
+    legionnaire = make_unit("Legionnaire", "Enemy", 2, 2, 0, 0, ["Shove"])
+    peter = make_unit("Peter", "Player", 3, 2, 0, 0, [])
+
+    random.seed(0)  # first draw is a miss at the current SHOVE_CHANCE
+    hit = game_logic.apply_skill_status("Shove", legionnaire, peter, [legionnaire, peter])
+
+    assert hit is False
+    assert (peter.x, peter.y) == (3, 2)
+    assert peter.stunned_turns == 0

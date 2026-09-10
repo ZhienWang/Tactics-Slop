@@ -2,6 +2,8 @@ import os
 import sys
 import math
 import heapq
+import random
+import asyncio
 import pygame
 from scripts.data_editor import (
     generate_dummy_csv_files,
@@ -64,6 +66,7 @@ class Unit:
         self.has_moved = False
         self.has_acted = False
         self.snared_turns = 0
+        self.stunned_turns = 0
         self.disabled = False
         self.removed = False
         self.magic_attack = data.get("magic_attack", 25)
@@ -138,15 +141,48 @@ def get_skill_targets(unit, skill_name, units_list=None):
     return targets
 
 
-def apply_skill_status(skill_name, target):
+SHOVE_CHANCE = 0.5
+SHOVE_DISTANCE = 2
+
+
+def push_unit_away(caster, target, units_list, tiles=SHOVE_DISTANCE):
+    dx = target.x - caster.x
+    dy = target.y - caster.y
+    if dx == 0 and dy == 0:
+        return
+    if abs(dx) >= abs(dy):
+        step = (1 if dx > 0 else -1, 0)
+    else:
+        step = (0, 1 if dy > 0 else -1)
+    occupied = {(u.x, u.y) for u in units_list if u.is_alive() and u != target}
+    x, y = target.x, target.y
+    for _ in range(tiles):
+        nx, ny = x + step[0], y + step[1]
+        if not (0 <= nx < MAP_COLS and 0 <= ny < MAP_ROWS) or (nx, ny) in occupied:
+            break
+        x, y = nx, ny
+    target.x, target.y = x, y
+
+
+def apply_skill_status(skill_name, caster, target, units_list):
     if skill_name == "Fish net":
         target.snared_turns = 2
+        return True
+    if skill_name == "Shove":
+        if random.random() >= SHOVE_CHANCE:
+            return False
+        target.stunned_turns = 1
+        push_unit_away(caster, target, units_list)
         return True
     return False
 
 
-def apply_preach(preacher, target, amount):
-    target.faith = max(0, min(100, target.faith + amount))
+FAITH_TRANSFER_RATE = 0.2
+
+
+def apply_preach(preacher, target):
+    gain = preacher.faith * FAITH_TRANSFER_RATE
+    target.faith = max(0, min(100, target.faith + gain))
     if target.faith >= 100 and target.team != "Player":
         target.team = "Player"
         target.color = (70, 140, 255)
@@ -448,7 +484,7 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
         pygame.draw.polygon(surface, (255, 60, 60), [(cx, cy - 28), (cx - 5, cy - 35), (cx + 5, cy - 35)])
 
 
-def main(stage=None):
+async def main(stage=None):
     global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -472,7 +508,7 @@ def main(stage=None):
     font = pygame.font.SysFont(None, 22)
     music_ready = False
     try:
-        music_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bgmusic.mp3")
+        music_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bgmusic.ogg")
         pygame.mixer.music.load(music_path)
         pygame.mixer.music.set_volume(0.5)
         music_ready = True
@@ -485,9 +521,9 @@ def main(stage=None):
     attack_sound = None
     step_sound = None
     try:
-        attack_sound = pygame.mixer.Sound(os.path.join(assets_dir, "sfx_attack.wav"))
+        attack_sound = pygame.mixer.Sound(os.path.join(assets_dir, "sfx_attack.ogg"))
         attack_sound.set_volume(0.6)
-        step_sound = pygame.mixer.Sound(os.path.join(assets_dir, "sfx_step.wav"))
+        step_sound = pygame.mixer.Sound(os.path.join(assets_dir, "sfx_step.ogg"))
         step_sound.set_volume(0.5)
     except (pygame.error, OSError):
         pass
@@ -554,11 +590,19 @@ def main(stage=None):
                 snared_this_turn = active_unit.snared_turns > 0
                 if snared_this_turn:
                     active_unit.snared_turns -= 1
+                stunned_this_turn = active_unit.stunned_turns > 0
+                if stunned_this_turn:
+                    active_unit.stunned_turns -= 1
                 active_unit.faith = max(0, active_unit.faith - active_unit.faith * 0.01)
                 cursor_x, cursor_y = active_unit.x, active_unit.y
                 current_menu = get_action_menu(active_unit, units)
                 menu_index = 0
-                if is_ai_team(active_unit.team):
+                if stunned_this_turn:
+                    active_unit.ct = 0
+                    combat_log = f"{active_unit.name} is reeling and cannot act!"
+                    game_state = "AI_PAUSE"
+                    ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
+                elif is_ai_team(active_unit.team):
                     ai_choice = choose_ai_action(active_unit, units)
                     if ai_choice["action"] == "skip":
                         next_step = get_ai_move_destination(active_unit, units)
@@ -604,13 +648,13 @@ def main(stage=None):
                             if attack_sound:
                                 attack_sound.play()
                         elif rules["type"] == "Faith":
-                            combat_log = apply_preach(active_unit, target_unit, rules["damage"])
+                            combat_log = apply_preach(active_unit, target_unit)
                             active_unit.has_acted = True
                             active_unit.ct = 0
                             game_state = "AI_PAUSE"
                             ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         elif rules["type"] == "Heal":
-                            combat_log = apply_preach(active_unit, target_unit, abs(rules["damage"]))
+                            combat_log = apply_preach(active_unit, target_unit)
                             active_unit.has_acted = True
                             active_unit.ct = 0
                             game_state = "AI_PAUSE"
@@ -625,8 +669,11 @@ def main(stage=None):
                             game_state = "AI_PAUSE"
                             ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         else:
-                            if apply_skill_status(ai_choice["skill"], target_unit):
-                                combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                            if apply_skill_status(ai_choice["skill"], active_unit, target_unit, units):
+                                if ai_choice["skill"] == "Shove":
+                                    combat_log = f"{active_unit.name} shoves {target_unit.name} back, leaving them reeling!"
+                                else:
+                                    combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
                             else:
                                 combat_log = f"{active_unit.name} uses {ai_choice['skill']} on {target_unit.name}."
                             active_unit.has_acted = True
@@ -808,17 +855,20 @@ def main(stage=None):
                                         attack_sound.play()
                                 else:
                                     if target_unit and rules["type"] == "Faith":
-                                        combat_log = apply_preach(active_unit, target_unit, rules["damage"])
+                                        combat_log = apply_preach(active_unit, target_unit)
                                     elif target_unit and rules["type"] == "Heal":
-                                        combat_log = apply_preach(active_unit, target_unit, abs(rules["damage"]))
+                                        combat_log = apply_preach(active_unit, target_unit)
                                     elif target_unit and rules["type"] == "Physical":
                                         target_unit.removed = True
                                         if attack_sound:
                                             attack_sound.play()
                                         combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
                                     elif target_unit:
-                                        if apply_skill_status(selected_skill, target_unit):
-                                            combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                                        if apply_skill_status(selected_skill, active_unit, target_unit, units):
+                                            if selected_skill == "Shove":
+                                                combat_log = f"{active_unit.name} shoves {target_unit.name} back, leaving them reeling!"
+                                            else:
+                                                combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
                                         else:
                                             combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name}."
                                     else:
@@ -969,17 +1019,20 @@ def main(stage=None):
                                     attack_sound.play()
                             else:
                                 if target_unit and rules["type"] == "Faith":
-                                    combat_log = apply_preach(active_unit, target_unit, rules["damage"])
+                                    combat_log = apply_preach(active_unit, target_unit)
                                 elif target_unit and rules["type"] == "Heal":
-                                    combat_log = apply_preach(active_unit, target_unit, abs(rules["damage"]))
+                                    combat_log = apply_preach(active_unit, target_unit)
                                 elif target_unit and rules["type"] == "Physical":
                                     target_unit.removed = True
                                     if attack_sound:
                                         attack_sound.play()
                                     combat_log = f"{active_unit.name} strikes down {target_unit.name} with {selected_skill}!"
                                 elif target_unit:
-                                    if apply_skill_status(selected_skill, target_unit):
-                                        combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
+                                    if apply_skill_status(selected_skill, active_unit, target_unit, units):
+                                        if selected_skill == "Shove":
+                                            combat_log = f"{active_unit.name} shoves {target_unit.name} back, leaving them reeling!"
+                                        else:
+                                            combat_log = f"{active_unit.name} snares {target_unit.name} with Fish net for 2 turns!"
                                     else:
                                         combat_log = f"{active_unit.name} uses {selected_skill} on {target_unit.name}."
                                 else:
@@ -1127,9 +1180,10 @@ def main(stage=None):
 
         pygame.display.flip()
         clock.tick(60)
+        await asyncio.sleep(0)
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
     pygame.quit()
     sys.exit()

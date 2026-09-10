@@ -11,25 +11,25 @@ Thomas,Player,Apostle,3,2,12,3,1,0,Preach,60,130,240,assets/thomas.png,22,14,132
 James Minor,Player,Apostle,0,1,11,3,1,0,Preach,50,120,240,assets/james_the_lesser.png,15,20,195,29,32,25
 Thaddeus,Player,Apostle,2,3,10,2,1,20,Preach|Chakra,50,120,240,assets/jude_thaddeus.png,36,36,195,30,36,31
 Simon,Player,Apostle,3,1,11,3,1,0,Preach|Slash,60,130,240,assets/simon_the_zealot.png,8,14,195,16,19,4
-Judas,Enemy,Apostle,2,1,9,2,1,0,Preach,50,120,240,assets/judas_iscariot.png,11,36,100,27,50,36
-Centurion Marcus,Enemy,Officer,5,11,13,3,1,0,Preach|Command,220,60,60,assets/legionaire.png,22,15,100,26,33,22
-Legionnaire 1,Enemy,Soldier,0,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,28,37,100,16,22,28
-Legionnaire 2,Enemy,Soldier,1,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,34,24,100,29,10,40
-Legionnaire 3,Enemy,Soldier,2,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,19,20,100,37,13,31
-Legionnaire 4,Enemy,Soldier,3,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,36,29,100,28,24,19
-Legionnaire 5,Enemy,Soldier,4,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,20,5,100,24,29,29
-Legionnaire 6,Enemy,Soldier,5,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,40,31,100,24,25,14
-Legionnaire 7,Enemy,Soldier,6,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,17,22,100,29,35,15
-Legionnaire 8,Enemy,Soldier,7,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,16,25,100,33,8,25
-Legionnaire 9,Enemy,Soldier,8,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,14,28,100,24,27,15
-Legionnaire 10,Enemy,Soldier,9,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,32,39,100,20,32,22
-Legionnaire 11,Enemy,Soldier,10,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,25,31,100,24,14,22
-Legionnaire 12,Enemy,Soldier,11,8,11,3,1,0,Preach,200,50,50,assets/legionaire.png,41,35,100,7,17,9
-Legionnaire 13,Enemy,Soldier,0,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,10,15,100,38,38,36
-Legionnaire 14,Enemy,Soldier,1,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,16,35,100,32,38,32
-Legionnaire 15,Enemy,Soldier,2,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,20,35,100,22,29,36
-Legionnaire 16,Enemy,Soldier,3,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,27,39,100,27,13,27
-Legionnaire 17,Enemy,Soldier,4,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,28,8,100,32,22,6
-Legionnaire 18,Enemy,Soldier,5,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,13,0,100,49,18,31
-Legionnaire 19,Enemy,Soldier,6,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,17,19,100,4,19,43
-Legionnaire 20,Enemy,Soldier,7,9,11,3,1,0,Preach,200,50,50,assets/legionaire.png,27,31,100,30,29,35
+Judas,Enemy,Apostle,2,1,9,2,1,0,Preach|Shove,50,120,240,assets/judas_iscariot.png,11,36,100,27,50,36
+Centurion Marcus,Enemy,Officer,5,11,13,3,1,0,Preach|Command|Shove,220,60,60,assets/legionaire.png,22,15,100,26,33,22
+Legionnaire 1,Enemy,Soldier,0,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,28,37,100,16,22,28
+Legionnaire 2,Enemy,Soldier,1,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,34,24,100,29,10,40
+Legionnaire 3,Enemy,Soldier,2,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,19,20,100,37,13,31
+Legionnaire 4,Enemy,Soldier,3,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,36,29,100,28,24,19
+Legionnaire 5,Enemy,Soldier,4,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,20,5,100,24,29,29
+Legionnaire 6,Enemy,Soldier,5,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,40,31,100,24,25,14
+Legionnaire 7,Enemy,Soldier,6,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,17,22,100,29,35,15
+Legionnaire 8,Enemy,Soldier,7,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,16,25,100,33,8,25
+Legionnaire 9,Enemy,Soldier,8,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,14,28,100,24,27,15
+Legionnaire 10,Enemy,Soldier,9,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,32,39,100,20,32,22
+Legionnaire 11,Enemy,Soldier,10,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,25,31,100,24,14,22
+Legionnaire 12,Enemy,Soldier,11,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,41,35,100,7,17,9
+Legionnaire 13,Enemy,Soldier,0,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,10,15,100,38,38,36
+Legionnaire 14,Enemy,Soldier,1,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,16,35,100,32,38,32
+Legionnaire 15,Enemy,Soldier,2,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,20,35,100,22,29,36
+Legionnaire 16,Enemy,Soldier,3,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,27,39,100,27,13,27
+Legionnaire 17,Enemy,Soldier,4,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,28,8,100,32,22,6
+Legionnaire 18,Enemy,Soldier,5,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,13,0,100,49,18,31
+Legionnaire 19,Enemy,Soldier,6,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,17,19,100,4,19,43
+Legionnaire 20,Enemy,Soldier,7,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,27,31,100,30,29,35
