@@ -661,9 +661,16 @@ async def main(stage=None):
     stats_scroll = 0
     stats_panel_rect = pygame.Rect(10, 10, 280, 180)
     show_hud = True
-    dialogue_lines = dialogues.get(1, []) if any(unit.name == "Jesus" for unit in units) else []
+    has_jesus = any(unit.name == "Jesus" for unit in units)
+    dialogue_lines = dialogues.get(1, []) if has_jesus else []
     dialogue_index = 0
     dialogue_active = bool(dialogue_lines)
+    # dialogues.csv can script mid-battle beats under later turn numbers (e.g.
+    # Jerusalem's arrest scene continues at turn 10/11); turn_counter tracks
+    # how many units have taken a turn so far and is checked each time a new
+    # one becomes active, so those beats actually fire instead of sitting
+    # unreachable in the data.
+    turn_counter = 1
 
     running = True
     while running:
@@ -676,10 +683,17 @@ async def main(stage=None):
             for u in living_units:
                 u.ct += u.speed
             ready = [u for u in living_units if u.ct >= 100]
-            if ready:
+            if ready and not dialogue_active:
                 ready.sort(key=lambda u: u.ct, reverse=True)
                 active_unit = ready[0]
                 inspected_unit = active_unit
+                turn_counter += 1
+                pending_dialogue = dialogues.get(turn_counter) if has_jesus else None
+                if pending_dialogue:
+                    dialogue_lines = pending_dialogue
+                    dialogue_index = 0
+                    dialogue_active = True
+                    continue
                 active_unit.has_moved = False
                 active_unit.has_acted = False
                 snared_this_turn = active_unit.snared_turns > 0
