@@ -128,6 +128,56 @@ def get_action_menu(unit, units_list):
     return ["Move", "Act", "Wait"]
 
 
+def predict_turn_order(units_list, count=8):
+    """Simulates the CT race forward to predict the next `count` units to
+    act, in order - not just who currently has the highest CT (which is
+    only accurate for the *immediate* next turn, since units gain CT at
+    different rates). Doesn't mutate real unit state."""
+    living = [u for u in units_list if u.is_alive() and not u.disabled]
+    if not living:
+        return []
+    ct = {u: u.ct for u in living}
+    order = []
+    for _ in range(min(count, len(living) * 20)):
+        ready = [u for u in living if ct[u] >= 100]
+        if ready:
+            next_unit = max(ready, key=lambda u: (ct[u], u.speed))
+        else:
+            def turns_needed(u):
+                return (100 - ct[u]) / u.speed if u.speed > 0 else float("inf")
+            next_unit = min(living, key=lambda u: (turns_needed(u), -u.speed))
+            dt = turns_needed(next_unit)
+            for u in living:
+                ct[u] += u.speed * dt
+        order.append(next_unit)
+        ct[next_unit] = 0
+        if len(order) >= count:
+            break
+    return order
+
+
+TURN_QUEUE_ICON_SIZE = 40
+TURN_QUEUE_GAP = 6
+
+
+def draw_turn_order_queue(surface, font, order, portraits, x, y):
+    label = font.render("TURN ORDER", True, (220, 220, 220))
+    surface.blit(label, (x, y))
+    icon_y = y + label.get_height() + 4
+    for i, u in enumerate(order):
+        icon_x = x + i * (TURN_QUEUE_ICON_SIZE + TURN_QUEUE_GAP)
+        rect = pygame.Rect(icon_x, icon_y, TURN_QUEUE_ICON_SIZE, TURN_QUEUE_ICON_SIZE)
+        pygame.draw.rect(surface, (20, 20, 30), rect)
+        portrait = portraits.get(u.name)
+        if portrait:
+            fitted = pygame.transform.smoothscale(portrait, (rect.width - 4, rect.height // 2))
+            surface.blit(fitted, (rect.x + 2, rect.y + (rect.height - fitted.get_height()) // 2))
+        else:
+            pygame.draw.circle(surface, u.color, rect.center, rect.width // 2 - 2)
+        border_color = (100, 180, 255) if u.team == "Player" else (255, 110, 110)
+        pygame.draw.rect(surface, border_color, rect, 3 if i == 0 else 1)
+
+
 def can_unit_move(unit, units_list):
     return unit.snared_turns == 0 and any(tile != (unit.x, unit.y) for tile in get_valid_moves_a_star(unit, units_list))
 
@@ -658,6 +708,7 @@ async def main(stage=None):
     pygame.display.set_caption(f"Tactics Engine: {stage['title']}" if stage else "Tactics Engine: Data Driven A* Pipeline")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 22)
+    big_font = pygame.font.SysFont(None, 96)
     music_ready = False
     try:
         music_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bgmusic.ogg")
@@ -1350,6 +1401,8 @@ async def main(stage=None):
             screen.blit(proj, rect)
 
         if show_hud:
+            draw_turn_order_queue(screen, font, predict_turn_order(units), portraits, 320, 10)
+
             # HUD
             pygame.draw.rect(screen, (40, 40, 50), (10, 10, 280, 180))
             pygame.draw.rect(screen, (100, 100, 110), (10, 10, 280, 180), 2)
@@ -1394,13 +1447,31 @@ async def main(stage=None):
             draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, portraits)
 
         if game_state == "GAME_OVER":
+            is_victory = winner == "Player"
+            theme_color = (255, 215, 0) if is_victory else (200, 60, 60)
+            title_text = "VICTORY" if is_victory else "DEFEAT"
+            subtitle_text = (
+                "Every heart in this land has turned toward the light."
+                if is_victory else
+                "The road to Jerusalem ends here."
+            )
+
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 180))
+            overlay.fill((0, 0, 0, 190))
             screen.blit(overlay, (0, 0))
-            screen.blit(font.render(f"GAME OVER - {combat_log}", True, (255, 255, 255)), (SCREEN_WIDTH // 2 - 180, SCREEN_HEIGHT // 2 - 10))
-            pygame.draw.rect(screen, CURSOR_COLOR, restart_button)
+
+            title_surf = big_font.render(title_text, True, theme_color)
+            screen.blit(title_surf, title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 90)))
+            subtitle_surf = font.render(subtitle_text, True, (230, 230, 230))
+            screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 25)))
+            log_surf = font.render(combat_log, True, (190, 190, 190))
+            screen.blit(log_surf, log_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 5)))
+
+            pygame.draw.rect(screen, theme_color, restart_button)
             pygame.draw.rect(screen, (255, 255, 255), restart_button, 2)
-            screen.blit(font.render("RESTART", True, (255, 255, 255)), (restart_button.x + 25, restart_button.y + 10))
+            restart_label_color = (20, 20, 20) if is_victory else (255, 255, 255)
+            restart_text = font.render("RESTART", True, restart_label_color)
+            screen.blit(restart_text, restart_text.get_rect(center=restart_button.center))
 
         if dialogue_active:
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)

@@ -375,3 +375,65 @@ def test_every_character_skill_is_registered_in_skills_csv():
         for char in load_characters_from_csv(path):
             unknown = set(char["skills"]) - registered
             assert not unknown, f"{char['name']} in {path} uses unregistered skill(s): {unknown}"
+
+
+# --- predict_turn_order (the turn-order queue UI's underlying simulation) ---
+
+def test_predict_turn_order_favors_higher_speed_proportionally():
+    # Speed 20 vs 10 is a 2:1 ratio, so within any settled window the faster
+    # unit should act roughly twice as often as the slower one.
+    fast = make_unit("Fast", "Player", 0, 0, 0, 0, [])
+    fast.speed = 20
+    slow = make_unit("Slow", "Enemy", 0, 1, 0, 0, [])
+    slow.speed = 10
+
+    order = game_logic.predict_turn_order([fast, slow], count=9)
+
+    assert [u.name for u in order] == ["Fast", "Fast", "Slow"] * 3
+
+
+def test_predict_turn_order_ready_now_goes_first():
+    ready_now = make_unit("ReadyNow", "Player", 0, 0, 0, 0, [])
+    ready_now.speed = 10
+    ready_now.ct = 100
+    not_ready = make_unit("NotReady", "Enemy", 0, 1, 0, 0, [])
+    not_ready.speed = 10
+    not_ready.ct = 50
+
+    order = game_logic.predict_turn_order([ready_now, not_ready], count=1)
+
+    assert order[0].name == "ReadyNow"
+
+
+def test_predict_turn_order_does_not_mutate_real_unit_state():
+    a = make_unit("A", "Player", 0, 0, 0, 0, [])
+    a.speed = 15
+    b = make_unit("B", "Enemy", 0, 1, 0, 0, [])
+    b.speed = 12
+    ct_before = (a.ct, b.ct)
+
+    game_logic.predict_turn_order([a, b], count=10)
+
+    assert (a.ct, b.ct) == ct_before
+
+
+def test_predict_turn_order_skips_dead_and_disabled_units():
+    alive = make_unit("Alive", "Player", 0, 0, 0, 0, [])
+    alive.speed = 10
+    dead = make_unit("Dead", "Enemy", 0, 1, 0, 0, [])
+    dead.speed = 10
+    dead.removed = True
+    disabled = make_unit("Disabled", "Player", 0, 2, 0, 0, [])
+    disabled.speed = 10
+    disabled.disabled = True
+
+    order = game_logic.predict_turn_order([alive, dead, disabled], count=5)
+
+    assert all(u.name == "Alive" for u in order)
+
+
+def test_predict_turn_order_empty_when_no_living_units():
+    dead = make_unit("Dead", "Player", 0, 0, 0, 0, [])
+    dead.removed = True
+
+    assert game_logic.predict_turn_order([dead], count=5) == []
