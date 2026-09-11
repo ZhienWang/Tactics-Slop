@@ -28,6 +28,13 @@ Agrias,Player,Mage,0,1,10,2,2,40,Attack|Fire|Blizzard,100,160,255,
 Gafgarion,Enemy,Archer,5,4,12,3,1,10,Attack|Shoot,220,60,60,
 Knight B,Enemy,Knight,4,5,9,2,1,0,Attack,180,50,50,"""
 
+ITEMS_CSV_DUMMY = """item_name,effect,amount,target_scope,range,uses,r,g,b
+Healing Salve,cure_status,0,ally,1,3,120,200,120
+Ankh,revive,0.5,dead_ally,2,2,220,200,120
+Myrrh,restore_mp,0,ally,1,2,170,110,210
+Frankincense,buff_magic_attack,0.3,ally,1,2,200,150,70
+Mustard Seed,faith_boost,20,ally,2,3,140,220,120"""
+
 GAME_SETTINGS_CSV_DUMMY = """setting_name,value
 background_path,"""
 
@@ -175,7 +182,10 @@ def generate_dummy_csv_files():
     with open(os.path.join(DATA_DIR, "dialogues.csv"), "w", newline="", encoding="utf-8") as f:
         f.write(DIALOGUES_CSV_DUMMY.strip())
 
-    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv, terrain_layout.csv, game_settings.csv, dialogues.csv")
+    with open(os.path.join(DATA_DIR, "items.csv"), "w", newline="") as f:
+        f.write(ITEMS_CSV_DUMMY.strip())
+
+    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv, terrain_layout.csv, game_settings.csv, dialogues.csv, items.csv")
 
 
 # --- 2. THE CSV PARSING PIPELINE ---
@@ -207,6 +217,24 @@ def load_skills_from_csv(filepath=None):
                 "color": (int(row["r"]), int(row["g"]), int(row["b"]))
             }
     return skills_registry
+
+
+def load_items_from_csv(filepath=None):
+    """Parses consumable item rows into a configured nested dictionary."""
+    items_registry = {}
+    filepath = filepath or os.path.join(DATA_DIR, "items.csv")
+    with open(filepath, "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            items_registry[row["item_name"]] = {
+                "effect": row["effect"],
+                "amount": float(row["amount"]),
+                "target_scope": row["target_scope"],
+                "range": int(row["range"]),
+                "uses": int(row["uses"]),
+                "color": (int(row["r"]), int(row["g"]), int(row["b"])),
+            }
+    return items_registry
 
 
 def load_terrain_from_csv(filepath=None):

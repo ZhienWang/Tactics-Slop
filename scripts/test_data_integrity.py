@@ -15,6 +15,7 @@ from scripts.data_editor import (
     generate_map_csv,
     load_characters_from_csv,
     load_world_map_nodes,
+    load_items_from_csv,
     TERRAIN_THEMES,
     STAGE_THEMES,
     TERRAIN_TILE_WEIGHTS,
@@ -238,3 +239,31 @@ def test_world_map_node_positions_fit_on_screen():
         x, y = node["pos"]
         assert 0 <= x <= SCREEN_WIDTH, f"{node_id} has x={x}, outside [0, {SCREEN_WIDTH}]"
         assert 0 <= y <= SCREEN_HEIGHT, f"{node_id} has y={y}, outside [0, {SCREEN_HEIGHT}]"
+
+
+# --- items.csv (consumable item catalog) ---
+
+EXPECTED_ITEMS = {"Healing Salve", "Ankh", "Myrrh", "Frankincense", "Mustard Seed"}
+VALID_ITEM_EFFECTS = {"cure_status", "revive", "restore_mp", "buff_magic_attack", "faith_boost"}
+VALID_TARGET_SCOPES = {"ally", "dead_ally"}
+
+
+def test_items_csv_contains_the_expected_bible_items():
+    items = load_items_from_csv()
+    assert EXPECTED_ITEMS.issubset(items.keys())
+
+
+def test_items_csv_uses_known_effects_and_target_scopes():
+    items = load_items_from_csv()
+    for name, data in items.items():
+        assert data["effect"] in VALID_ITEM_EFFECTS, f"{name} has an unrecognized effect: {data['effect']}"
+        assert data["target_scope"] in VALID_TARGET_SCOPES, f"{name} has an unrecognized target_scope: {data['target_scope']}"
+        assert data["range"] >= 1, f"{name} has a non-positive range"
+        assert data["uses"] >= 1, f"{name} starts with zero stock"
+
+
+def test_ankh_revive_rate_stays_within_a_sane_fraction_of_the_users_faith():
+    items = load_items_from_csv()
+    ankh = items["Ankh"]
+    assert ankh["effect"] == "revive"
+    assert 0 < ankh["amount"] <= 1  # a fraction of the reviver's own Faith, never more than all of it

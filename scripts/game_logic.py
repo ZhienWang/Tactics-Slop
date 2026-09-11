@@ -9,6 +9,7 @@ from scripts.data_editor import (
     generate_dummy_csv_files,
     load_map_from_csv,
     load_skills_from_csv,
+    load_items_from_csv,
     load_terrain_from_csv,
     load_settings_from_csv,
     load_dialogues_from_csv,
@@ -46,6 +47,7 @@ MAP_DATA = []
 MAP_ROWS = 0
 MAP_COLS = 0
 SKILL_REGISTRY = {}
+ITEM_REGISTRY = {}
 CHARACTER_ROSTER = []
 TERRAIN_LAYOUT = []
 
@@ -125,7 +127,13 @@ def get_valid_moves_a_star(unit, units_list):
 
 
 def get_action_menu(unit, units_list):
-    return ["Move", "Act", "Wait"]
+    # Only the Player side carries the disciples' satchel of supplies - the
+    # Item menu never applies to the Enemy AI.
+    menu = ["Move", "Act"]
+    if unit.team == "Player":
+        menu.append("Item")
+    menu.append("Wait")
+    return menu
 
 
 def predict_turn_order(units_list, count=8):
@@ -204,6 +212,37 @@ def get_skill_targets(unit, skill_name, units_list=None):
                         continue
                 targets.append((x, y))
     return targets
+
+
+def get_item_targets(unit, item_name, units_list):
+    """Like get_skill_targets, but for consumable items: 'ally' items find a
+    living teammate (self included) and 'dead_ally' items (Ankh) find a
+    fallen teammate at the tile where they were struck down."""
+    targets = []
+    item_data = ITEM_REGISTRY[item_name]
+    max_range = item_data["range"]
+    wants_dead = item_data["target_scope"] == "dead_ally"
+    for x in range(MAP_COLS):
+        for y in range(MAP_ROWS):
+            distance = abs(unit.x - x) + abs(unit.y - y)
+            if distance > max_range:
+                continue
+            occupant = next(
+                (u for u in units_list if u.x == x and u.y == y and u.team == unit.team and u.is_alive() != wants_dead),
+                None,
+            )
+            if occupant is not None:
+                targets.append((x, y))
+    return targets
+
+
+def find_item_target(units_list, x, y, item_name, team):
+    item_data = ITEM_REGISTRY[item_name]
+    wants_dead = item_data["target_scope"] == "dead_ally"
+    return next(
+        (u for u in units_list if u.x == x and u.y == y and u.team == team and u.is_alive() != wants_dead),
+        None,
+    )
 
 
 SHOVE_CHANCE = 0.5
@@ -409,6 +448,55 @@ def apply_preach(preacher, target):
     return f"{preacher.name} preaches to {target.name}, raising their faith to {round(target.faith)}!"
 
 
+ANKH_MIN_REVIVE_FAITH = 10
+
+
+def apply_item_effect(item_name, user, target, units_list=None):
+    """Resolve a consumable item's effect on its target. Returns a combat
+    log message. Each item's potency is tied to the user's own stats, the
+    same way Preach scales off the preacher's Faith."""
+    item_data = ITEM_REGISTRY[item_name]
+    effect = item_data["effect"]
+    amount = item_data["amount"]
+    now = pygame.time.get_ticks()
+    user.speech_bubble_until = now + PREACH_BUBBLE_MS
+    target.speech_bubble_until = now + PREACH_BUBBLE_MS
+
+    if effect == "cure_status":
+        target.stunned_turns = 0
+        target.snared_turns = 0
+        if target is user:
+            return f"{user.name} tends their own wounds with a Healing Salve."
+        return f"{user.name} applies a Healing Salve to {target.name}, easing their wounds!"
+
+    if effect == "revive":
+        target.removed = False
+        target.removed_at = None
+        target.faith = max(ANKH_MIN_REVIVE_FAITH, min(FAITH_CAP, round(user.faith * amount)))
+        target.faith_popup = {"amount": round(target.faith), "start": now + PREACH_BUBBLE_MS}
+        return f"{user.name} touches {target.name} with an Ankh - breath returns to them!"
+
+    if effect == "restore_mp":
+        target.mp = target.max_mp
+        if target is user:
+            return f"{user.name} draws on the Myrrh's fragrance, restoring their own strength."
+        return f"{user.name} shares Myrrh with {target.name}, restoring their strength!"
+
+    if effect == "buff_magic_attack":
+        gain = round(user.magic_attack * amount)
+        target.magic_attack += gain
+        return f"{user.name} offers Frankincense to {target.name}, sharpening their spirit! (+{gain} Magic Attack)"
+
+    if effect == "faith_boost":
+        faith_before = target.faith
+        target.faith = max(0, min(FAITH_CAP, target.faith + amount))
+        actual_gain = target.faith - faith_before
+        target.faith_popup = {"amount": round(actual_gain), "start": now + PREACH_BUBBLE_MS}
+        return f"{user.name} plants a Mustard Seed of faith in {target.name} - it grows to {round(target.faith)}!"
+
+    return f"{user.name} uses {item_name} on {target.name}."
+
+
 def draw_dialogue_window(surface, font, speaker, text):
     window = pygame.Rect(80, SCREEN_HEIGHT - 190, SCREEN_WIDTH - 160, 120)
     pygame.draw.rect(surface, (15, 15, 25), window)
@@ -432,22 +520,29 @@ def draw_dialogue_window(surface, font, speaker, text):
     surface.blit(font.render("[Space / Enter] Continue", True, (160, 160, 160)), (window.right - 210, window.bottom - 25))
 
 
-def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, portraits):
+def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, portraits, team_inventory=None):
     if not active_unit:
         return
     mx, my = SCREEN_WIDTH - 220, 30
-    pygame.draw.rect(surface, (20, 20, 30), (mx, my, 200, 180))
-    pygame.draw.rect(surface, CURSOR_COLOR, (mx, my, 200, 180), 2)
+    # The box (and where the portrait sits below the list) grows with however
+    # many rows current_menu has - the root menu grew from 3 to 4 entries
+    # once Item joined Move/Act/Wait, and skill/item submenus vary in length.
+    box_height = 129 + len(current_menu) * 26
+    pygame.draw.rect(surface, (20, 20, 30), (mx, my, 200, box_height))
+    pygame.draw.rect(surface, CURSOR_COLOR, (mx, my, 200, box_height), 2)
     surface.blit(font.render(f"{active_unit.name} Actions", True, (255, 255, 255)), (mx + 10, my + 10))
     portrait = portraits.get(active_unit.name)
     if portrait:
-        surface.blit(portrait, (mx + 10, my + 120))
-        surface.blit(font.render(active_unit.name, True, (200, 200, 255)), (mx + 60, my + 126))
+        portrait_y = my + 45 + len(current_menu) * 26 + 4
+        surface.blit(portrait, (mx + 10, portrait_y))
+        surface.blit(font.render(active_unit.name, True, (200, 200, 255)), (mx + 60, portrait_y + 6))
         if active_unit.char_class:
-            surface.blit(font.render(active_unit.char_class, True, (180, 180, 255)), (mx + 60, my + 146))
+            surface.blit(font.render(active_unit.char_class, True, (180, 180, 255)), (mx + 60, portrait_y + 26))
     for idx, opt in enumerate(current_menu):
+        no_items_left = not any((team_inventory or {}).get(active_unit.team, {}).values())
         if ((opt == "Move" and (active_unit.has_moved or not can_unit_move(active_unit, units)))
-                or (opt == "Act" and active_unit.has_acted)):
+                or (opt == "Act" and active_unit.has_acted)
+                or (opt == "Item" and (active_unit.has_acted or no_items_left))):
             opt_color = (70, 70, 70)
         else:
             opt_color = CURSOR_COLOR if idx == menu_index else (170, 170, 170)
@@ -743,11 +838,11 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
 
 
 async def main(stage=None):
-    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
+    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     if stage is None:
-        required_files = ["map_layout.csv", "skills.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
+        required_files = ["map_layout.csv", "skills.csv", "items.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
         if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
             generate_dummy_csv_files()
 
@@ -758,6 +853,7 @@ async def main(stage=None):
         seed = stage.get("node_id") if stage else None
         MAP_DATA = [[int(v) for v in line.split(",")] for line in generate_map_csv(8, 8, seed=seed).splitlines()]
     SKILL_REGISTRY = load_skills_from_csv()
+    ITEM_REGISTRY = load_items_from_csv()
     CHARACTER_ROSTER = load_characters_from_csv(stage.get("characters") if stage else None)
     MAP_ROWS = len(MAP_DATA)
     MAP_COLS = len(MAP_DATA[0]) if MAP_DATA else 0
@@ -808,6 +904,8 @@ async def main(stage=None):
         background_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bg.jpg")
 
     units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
+    # Only the Player side carries a satchel of supplies into battle.
+    team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
     dialogues = load_dialogues_from_csv(map_id=stage["node_id"] if stage else "jerusalem")
     portraits = build_character_portraits(units, invalid_assets)
 
@@ -817,10 +915,11 @@ async def main(stage=None):
 
     game_state = "TICKING"
     active_unit = None
-    main_menu = ["Move", "Act", "Wait"]
+    main_menu = ["Move", "Act", "Item", "Wait"]
     current_menu = main_menu
     menu_index = 0
     selected_skill = None
+    selected_item = None
     cursor_x, cursor_y = 0, 0
     valid_tiles = []
     move_drag_start = None
@@ -988,6 +1087,8 @@ async def main(stage=None):
                         current_menu = main_menu
                         menu_index = 0
                         selected_skill = None
+                        selected_item = None
+                        team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
                         cursor_x, cursor_y = 0, 0
                         valid_tiles = []
                         combat_log = "Game restarted. Combat resumed."
@@ -1002,6 +1103,8 @@ async def main(stage=None):
                         current_menu = main_menu
                         menu_index = 0
                         selected_skill = None
+                        selected_item = None
+                        team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
                         cursor_x, cursor_y = 0, 0
                         valid_tiles = []
                         combat_log = "Game restarted. Combat resumed."
@@ -1062,6 +1165,11 @@ async def main(stage=None):
                         move_drag_start = None
                         game_state = "MENU"
                         combat_log = "Move canceled."
+                    elif selected_item:
+                        current_menu = [name for name, count in team_inventory.get(active_unit.team, {}).items() if count > 0] + ["Wait"]
+                        game_state = "SUBMENU_ITEM"
+                        selected_item = None
+                        combat_log = "Item use canceled."
                     else:
                         current_menu = active_unit.skills + ["Wait"]
                         game_state = "SUBMENU_ACT"
@@ -1070,11 +1178,12 @@ async def main(stage=None):
                     continue
                 if event.button == 1 and game_state != "TICKING":
                     # Menu clicks (left-side HUD)
-                    if game_state in ["MENU", "SUBMENU_ACT"]:
+                    if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"]:
                         item_height = 26
                         mx, my = event.pos
                         menu_x, menu_y = SCREEN_WIDTH - 220, 30
-                        if menu_x <= mx <= menu_x + 200 and menu_y <= my <= menu_y + 180:
+                        menu_box_height = 129 + len(current_menu) * item_height
+                        if menu_x <= mx <= menu_x + 200 and menu_y <= my <= menu_y + menu_box_height:
                             relative_y = my - (menu_y + 45)
                             if 0 <= relative_y < len(current_menu) * item_height:
                                 clicked_index = int(relative_y // item_height)
@@ -1090,6 +1199,10 @@ async def main(stage=None):
                                             current_menu = active_unit.skills + ["Wait"]
                                             menu_index = 0
                                             game_state = "SUBMENU_ACT"
+                                        elif choice == "Item" and not active_unit.has_acted:
+                                            current_menu = [name for name, count in team_inventory.get(active_unit.team, {}).items() if count > 0] + ["Wait"]
+                                            menu_index = 0
+                                            game_state = "SUBMENU_ITEM"
                                         elif choice == "Wait":
                                             active_unit.ct = 0
                                             game_state = "TICKING"
@@ -1106,6 +1219,14 @@ async def main(stage=None):
                                                 game_state = "TARGET_SELECT"
                                             else:
                                                 combat_log = f"Failed! Requires {skill_rules['mp_cost']} MP."
+                                    elif game_state == "SUBMENU_ITEM":
+                                        if current_menu[menu_index] == "Wait":
+                                            active_unit.ct = 0
+                                            game_state = "TICKING"
+                                        else:
+                                            selected_item = current_menu[menu_index]
+                                            valid_tiles = get_item_targets(active_unit, selected_item, units)
+                                            game_state = "TARGET_SELECT"
                         else:
                             hit_tile = screen_to_map(mx, my, origin_x, origin_y, MAP_DATA, rotation, map_zoom)
                             if hit_tile is not None:
@@ -1146,6 +1267,18 @@ async def main(stage=None):
                                 current_menu = get_action_menu(active_unit, units)
                                 menu_index = 0
                                 move_drag_start = None
+                                game_state = "MENU"
+                            elif game_state == "TARGET_SELECT" and hit_tile in valid_tiles and selected_item:
+                                target_unit = find_item_target(units, cursor_x, cursor_y, selected_item, active_unit.team)
+                                if target_unit:
+                                    combat_log = apply_item_effect(selected_item, active_unit, target_unit, units)
+                                    team_inventory[active_unit.team][selected_item] -= 1
+                                else:
+                                    combat_log = f"{active_unit.name} used {selected_item}, but found no one to help."
+                                active_unit.has_acted = True
+                                selected_item = None
+                                current_menu = get_action_menu(active_unit, units)
+                                menu_index = 2
                                 game_state = "MENU"
                             elif game_state == "TARGET_SELECT" and hit_tile in valid_tiles:
                                 target_unit = next((u for u in units if u.x == cursor_x and u.y == cursor_y and u.is_alive()), None)
@@ -1245,15 +1378,20 @@ async def main(stage=None):
                     if event.key in [pygame.K_SPACE, pygame.K_RETURN]:
                         # Already handled above
                         pass
-                elif game_state != "TICKING":
+                elif game_state not in ("TICKING", "MOVE_SELECT", "TARGET_SELECT"):
                     # Handle menu and grid keyboard controls (kept simple here)
-                    if game_state in ["MENU", "SUBMENU_ACT"]:
+                    if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"]:
                         if event.key == pygame.K_UP:    menu_index = (menu_index - 1) % len(current_menu)
                         elif event.key == pygame.K_DOWN:  menu_index = (menu_index + 1) % len(current_menu)
                         elif event.key == pygame.K_ESCAPE:
                             if game_state == "SUBMENU_ACT":
                                 current_menu = main_menu
                                 menu_index = 1
+                                game_state = "MENU"
+                            elif game_state == "SUBMENU_ITEM":
+                                current_menu = main_menu
+                                menu_index = 2
+                                selected_item = None
                                 game_state = "MENU"
                             elif game_state == "MENU":
                                 running = False
@@ -1268,22 +1406,34 @@ async def main(stage=None):
                                     current_menu = active_unit.skills + ["Wait"]
                                     menu_index = 0
                                     game_state = "SUBMENU_ACT"
+                                elif choice == "Item" and not active_unit.has_acted:
+                                    current_menu = [name for name, count in team_inventory.get(active_unit.team, {}).items() if count > 0] + ["Wait"]
+                                    menu_index = 0
+                                    game_state = "SUBMENU_ITEM"
                                 elif choice == "Wait":
                                     active_unit.ct = 0
                                     game_state = "TICKING"
-                        elif game_state == "SUBMENU_ACT":
-                            if current_menu[menu_index] == "Wait":
-                                active_unit.ct = 0
-                                game_state = "TICKING"
-                            else:
-                                skill_name = current_menu[menu_index]
-                                skill_rules = SKILL_REGISTRY[skill_name]
-                                if active_unit.mp >= skill_rules["mp_cost"]:
-                                    selected_skill = skill_name
-                                    valid_tiles = get_skill_targets(active_unit, skill_name, units)
-                                    game_state = "TARGET_SELECT"
+                            elif game_state == "SUBMENU_ACT":
+                                if current_menu[menu_index] == "Wait":
+                                    active_unit.ct = 0
+                                    game_state = "TICKING"
                                 else:
-                                    combat_log = f"Failed! Requires {skill_rules['mp_cost']} MP."
+                                    skill_name = current_menu[menu_index]
+                                    skill_rules = SKILL_REGISTRY[skill_name]
+                                    if active_unit.mp >= skill_rules["mp_cost"]:
+                                        selected_skill = skill_name
+                                        valid_tiles = get_skill_targets(active_unit, skill_name, units)
+                                        game_state = "TARGET_SELECT"
+                                    else:
+                                        combat_log = f"Failed! Requires {skill_rules['mp_cost']} MP."
+                            elif game_state == "SUBMENU_ITEM":
+                                if current_menu[menu_index] == "Wait":
+                                    active_unit.ct = 0
+                                    game_state = "TICKING"
+                                else:
+                                    selected_item = current_menu[menu_index]
+                                    valid_tiles = get_item_targets(active_unit, selected_item, units)
+                                    game_state = "TARGET_SELECT"
 
                 elif game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
                     if event.key == pygame.K_UP and cursor_y > 0: cursor_y -= 1
@@ -1298,6 +1448,11 @@ async def main(stage=None):
                             move_drag_start = None
                             game_state = "MENU"
                             combat_log = "Move canceled."
+                        elif selected_item:
+                            current_menu = [name for name, count in team_inventory.get(active_unit.team, {}).items() if count > 0] + ["Wait"]
+                            selected_item = None
+                            game_state = "SUBMENU_ITEM"
+                            combat_log = "Item use canceled."
                         else:
                             current_menu = active_unit.skills + ["Wait"]
                             selected_skill = None
@@ -1312,6 +1467,18 @@ async def main(stage=None):
                             current_menu = get_action_menu(active_unit, units)
                             menu_index = 0
                             move_drag_start = None
+                            game_state = "MENU"
+                        elif game_state == "TARGET_SELECT" and (cursor_x, cursor_y) in valid_tiles and selected_item:
+                            target_unit = find_item_target(units, cursor_x, cursor_y, selected_item, active_unit.team)
+                            if target_unit:
+                                combat_log = apply_item_effect(selected_item, active_unit, target_unit, units)
+                                team_inventory[active_unit.team][selected_item] -= 1
+                            else:
+                                combat_log = f"{active_unit.name} used {selected_item}, but found no one to help."
+                            active_unit.has_acted = True
+                            selected_item = None
+                            current_menu = get_action_menu(active_unit, units)
+                            menu_index = 2
                             game_state = "MENU"
                         elif game_state == "TARGET_SELECT" and (cursor_x, cursor_y) in valid_tiles:
                             target_unit = next((u for u in units if u.x == cursor_x and u.y == cursor_y and u.is_alive()), None)
@@ -1401,7 +1568,10 @@ async def main(stage=None):
             if game_state == "MOVE_SELECT" and (x, y) in valid_tiles:
                 tile_color = [40, 110, 190]
             elif game_state == "TARGET_SELECT" and (x, y) in valid_tiles:
-                tile_color = list(SKILL_REGISTRY[selected_skill]["color"]) if selected_skill else tile_color
+                if selected_item:
+                    tile_color = list(ITEM_REGISTRY[selected_item]["color"])
+                elif selected_skill:
+                    tile_color = list(SKILL_REGISTRY[selected_skill]["color"])
             terrain_path = ""
             if y < len(TERRAIN_LAYOUT) and x < len(TERRAIN_LAYOUT[y]):
                 terrain_path = TERRAIN_LAYOUT[y][x]
@@ -1503,8 +1673,8 @@ async def main(stage=None):
 
             draw_unit_profile(screen, font, inspected_unit, portraits, (SCREEN_WIDTH - 10, panel_rect.y - 10))
 
-        if game_state in ["MENU", "SUBMENU_ACT"] and active_unit:
-            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, portraits)
+        if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"] and active_unit:
+            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, portraits, team_inventory)
 
         if game_state == "GAME_OVER":
             is_victory = winner == "Player"

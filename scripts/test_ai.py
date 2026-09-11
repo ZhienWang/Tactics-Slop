@@ -595,3 +595,145 @@ def test_sergeant_shove_pushes_farther_than_default():
     assert sergeant_push_distance == game_logic.CLASS_SHOVE_DISTANCE["Sergeant"]
     assert knight_push_distance == game_logic.SHOVE_DISTANCE
     assert sergeant_push_distance > knight_push_distance
+
+
+# --- consumable items (Healing Salve, Ankh, Myrrh, Frankincense, Mustard Seed) ---
+
+def set_item_registry():
+    game_logic.ITEM_REGISTRY = {
+        "Healing Salve": {"effect": "cure_status", "amount": 0, "target_scope": "ally", "range": 1, "uses": 3, "color": (120, 200, 120)},
+        "Ankh": {"effect": "revive", "amount": 0.5, "target_scope": "dead_ally", "range": 2, "uses": 2, "color": (220, 200, 120)},
+        "Myrrh": {"effect": "restore_mp", "amount": 0, "target_scope": "ally", "range": 1, "uses": 2, "color": (170, 110, 210)},
+        "Frankincense": {"effect": "buff_magic_attack", "amount": 0.3, "target_scope": "ally", "range": 1, "uses": 2, "color": (200, 150, 70)},
+        "Mustard Seed": {"effect": "faith_boost", "amount": 20, "target_scope": "ally", "range": 2, "uses": 3, "color": (140, 220, 120)},
+    }
+
+
+def test_get_action_menu_shows_item_only_for_player_team():
+    player_unit = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    enemy_unit = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
+
+    assert game_logic.get_action_menu(player_unit, [player_unit]) == ["Move", "Act", "Item", "Wait"]
+    assert game_logic.get_action_menu(enemy_unit, [enemy_unit]) == ["Move", "Act", "Wait"]
+
+
+def test_get_item_targets_finds_living_ally_including_self_within_range():
+    set_item_registry()
+    game_logic.MAP_ROWS = 5
+    game_logic.MAP_COLS = 5
+    user = make_unit("Peter", "Player", 2, 2, 0, 0, [])
+    nearby_ally = make_unit("Andrew", "Player", 2, 3, 0, 0, [])
+    far_ally = make_unit("John", "Player", 4, 4, 0, 0, [])
+    enemy = make_unit("Legionnaire", "Enemy", 2, 1, 0, 0, [])
+    units_list = [user, nearby_ally, far_ally, enemy]
+
+    targets = game_logic.get_item_targets(user, "Healing Salve", units_list)  # range 1
+
+    assert (2, 2) in targets  # self
+    assert (2, 3) in targets  # adjacent ally
+    assert (4, 4) not in targets  # out of range
+    assert (2, 1) not in targets  # enemy tile excluded
+
+
+def test_get_item_targets_dead_ally_only_finds_removed_teammates():
+    set_item_registry()
+    game_logic.MAP_ROWS = 5
+    game_logic.MAP_COLS = 5
+    user = make_unit("Peter", "Player", 2, 2, 0, 0, [])
+    fallen_ally = make_unit("Andrew", "Player", 2, 3, 0, 0, [])
+    fallen_ally.removed = True
+    living_ally = make_unit("John", "Player", 2, 1, 0, 0, [])
+    fallen_enemy = make_unit("Legionnaire", "Enemy", 1, 2, 0, 0, [])
+    fallen_enemy.removed = True
+    units_list = [user, fallen_ally, living_ally, fallen_enemy]
+
+    targets = game_logic.get_item_targets(user, "Ankh", units_list)  # range 2, dead_ally
+
+    assert (2, 3) in targets  # fallen ally
+    assert (2, 1) not in targets  # living ally isn't a valid Ankh target
+    assert (1, 2) not in targets  # a fallen ENEMY isn't a valid Ankh target either
+
+
+def test_apply_item_effect_healing_salve_cures_status_ailments():
+    set_item_registry()
+    user = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    target = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
+    target.stunned_turns = 1
+    target.snared_turns = 2
+
+    message = game_logic.apply_item_effect("Healing Salve", user, target)
+
+    assert target.stunned_turns == 0
+    assert target.snared_turns == 0
+    assert "Healing Salve" in message
+
+
+def test_apply_item_effect_ankh_revives_scaled_by_users_faith():
+    set_item_registry()
+    user = make_unit("Peter", "Player", 0, 0, 60, 0, [])
+    fallen_ally = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
+    fallen_ally.removed = True
+    fallen_ally.removed_at = 1234
+
+    message = game_logic.apply_item_effect("Ankh", user, fallen_ally)
+
+    assert fallen_ally.is_alive()
+    assert fallen_ally.removed_at is None
+    assert fallen_ally.faith == round(60 * 0.5)
+    assert "Ankh" in message
+
+
+def test_apply_item_effect_ankh_revive_floors_at_minimum_faith():
+    set_item_registry()
+    weak_user = make_unit("Peter", "Player", 0, 0, 5, 0, [])  # 5 * 0.5 = 2.5, below the floor
+    fallen_ally = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
+    fallen_ally.removed = True
+
+    game_logic.apply_item_effect("Ankh", weak_user, fallen_ally)
+
+    assert fallen_ally.faith == game_logic.ANKH_MIN_REVIVE_FAITH
+
+
+def test_apply_item_effect_myrrh_fully_restores_mp():
+    set_item_registry()
+    user = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    target = make_unit("Andrew", "Player", 0, 1, 0, 30, [])
+    target.mp = 5
+
+    game_logic.apply_item_effect("Myrrh", user, target)
+
+    assert target.mp == target.max_mp == 30
+
+
+def test_apply_item_effect_frankincense_buffs_magic_attack_from_users_stat():
+    set_item_registry()
+    user = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    user.magic_attack = 40
+    target = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
+    target.magic_attack = 10
+
+    game_logic.apply_item_effect("Frankincense", user, target)
+
+    assert target.magic_attack == 10 + round(40 * 0.3)
+
+
+def test_apply_item_effect_mustard_seed_grants_flat_faith_clamped_to_cap():
+    set_item_registry()
+    user = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    target = make_unit("Andrew", "Player", 0, 1, 190, 0, [])
+
+    game_logic.apply_item_effect("Mustard Seed", user, target)
+
+    assert target.faith == game_logic.FAITH_CAP  # 190 + 20 clamps at the cap
+
+
+def test_find_item_target_matches_get_item_targets_for_dead_ally_scope():
+    set_item_registry()
+    user = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    fallen_ally = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
+    fallen_ally.removed = True
+    units_list = [user, fallen_ally]
+
+    found = game_logic.find_item_target(units_list, 0, 1, "Ankh", "Player")
+
+    assert found is fallen_ally

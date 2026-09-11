@@ -1,0 +1,6 @@
+item_name,effect,amount,target_scope,range,uses,r,g,b
+Healing Salve,cure_status,0,ally,1,3,120,200,120
+Ankh,revive,0.5,dead_ally,2,2,220,200,120
+Myrrh,restore_mp,0,ally,1,2,170,110,210
+Frankincense,buff_magic_attack,0.3,ally,1,2,200,150,70
+Mustard Seed,faith_boost,20,ally,2,3,140,220,120
