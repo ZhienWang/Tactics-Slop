@@ -76,6 +76,8 @@ class Unit:
         self.removed = False
         self.removed_at = None
         self.converted_at = None
+        self.speech_bubble_until = None
+        self.faith_popup = None
         self.magic_attack = data.get("magic_attack", 25)
         self.magic_defense = data.get("magic_defense", 25)
         self.faith = data.get("faith", 25)
@@ -191,6 +193,42 @@ def draw_conversion_flash(surface, cx, cy, elapsed, duration=CONVERT_FLASH_MS):
     surface.blit(ring, (cx - radius - 2, cy - radius - 2))
 
 
+# Preach plays out as a beat, not an instant number change: both units get a
+# "talking" speech bubble for PREACH_BUBBLE_MS, then it's replaced by the
+# actual Faith gain floating up off the target for FAITH_POPUP_MS.
+PREACH_BUBBLE_MS = 700
+FAITH_POPUP_MS = 900
+
+
+def draw_speech_bubble(surface, cx, cy, zoom=1.0):
+    width, height = round(34 * zoom), round(22 * zoom)
+    bubble_rect = pygame.Rect(0, 0, width, height)
+    bubble_rect.center = (cx, cy)
+    pygame.draw.ellipse(surface, (250, 250, 245), bubble_rect)
+    pygame.draw.ellipse(surface, (40, 40, 40), bubble_rect, 2)
+    tail = [
+        (cx - round(5 * zoom), bubble_rect.bottom - round(3 * zoom)),
+        (cx + round(3 * zoom), bubble_rect.bottom - round(3 * zoom)),
+        (cx - round(2 * zoom), bubble_rect.bottom + round(9 * zoom)),
+    ]
+    pygame.draw.polygon(surface, (250, 250, 245), tail)
+    pygame.draw.polygon(surface, (40, 40, 40), tail, 1)
+    font = pygame.font.SysFont(None, max(10, round(18 * zoom)))
+    dots = font.render("...", True, (40, 40, 40))
+    surface.blit(dots, dots.get_rect(center=bubble_rect.center))
+
+
+def draw_faith_popup(surface, cx, cy, amount, elapsed, duration=FAITH_POPUP_MS):
+    progress = max(0.0, min(1.0, elapsed / duration))
+    rise = round(30 * progress)
+    alpha = max(0, 255 - int(255 * progress))
+    font = pygame.font.SysFont(None, 24)
+    sign = "+" if amount >= 0 else ""
+    text = font.render(f"{sign}{amount} Faith", True, (255, 215, 0))
+    text.set_alpha(alpha)
+    surface.blit(text, text.get_rect(center=(cx, cy - rise)))
+
+
 def kill_unit(target):
     target.removed = True
     target.removed_at = pygame.time.get_ticks()
@@ -243,12 +281,20 @@ FAITH_TRANSFER_RATE = 0.2
 
 def apply_preach(preacher, target):
     gain = preacher.faith * FAITH_TRANSFER_RATE
+    faith_before = target.faith
     target.faith = max(0, min(FAITH_CAP, target.faith + gain))
+    actual_gain = target.faith - faith_before
+
+    now = pygame.time.get_ticks()
+    preacher.speech_bubble_until = now + PREACH_BUBBLE_MS
+    target.speech_bubble_until = now + PREACH_BUBBLE_MS
+    target.faith_popup = {"amount": round(actual_gain), "start": now + PREACH_BUBBLE_MS}
+
     if target.faith >= FAITH_CAP and target.team != "Player":
         target.team = "Player"
         target.color = (70, 140, 255)
         target.disabled = True
-        target.converted_at = pygame.time.get_ticks()
+        target.converted_at = now + PREACH_BUBBLE_MS
         return f"{target.name}'s faith is complete! They lay down their arms and join the Player team."
     return f"{preacher.name} preaches to {target.name}, raising their faith to {round(target.faith)}!"
 
@@ -1220,11 +1266,25 @@ async def main(stage=None):
                     continue
                 if u.is_alive():
                     draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=portraits, zoom=map_zoom, in_water=is_water_tile(terrain_path))
+                    head_cy = sy + (TILE_HEIGHT // 2) - 12 + (round(6 * map_zoom) if is_water_tile(terrain_path) else 0)
+                    now_ticks = pygame.time.get_ticks()
                     if u.converted_at is not None:
-                        elapsed = pygame.time.get_ticks() - u.converted_at
-                        if elapsed < CONVERT_FLASH_MS:
-                            flash_cy = sy + (TILE_HEIGHT // 2) - 12 + (round(6 * map_zoom) if is_water_tile(terrain_path) else 0)
-                            draw_conversion_flash(screen, sx, flash_cy, elapsed)
+                        elapsed = now_ticks - u.converted_at
+                        if 0 <= elapsed < CONVERT_FLASH_MS:
+                            draw_conversion_flash(screen, sx, head_cy, elapsed)
+                    if u.speech_bubble_until is not None:
+                        if now_ticks < u.speech_bubble_until:
+                            draw_speech_bubble(screen, sx, head_cy - round(35 * map_zoom), map_zoom)
+                        else:
+                            u.speech_bubble_until = None
+                    if u.faith_popup is not None:
+                        popup = u.faith_popup
+                        popup_elapsed = now_ticks - popup["start"]
+                        if popup_elapsed >= 0:
+                            if popup_elapsed < FAITH_POPUP_MS:
+                                draw_faith_popup(screen, sx, head_cy - round(35 * map_zoom), popup["amount"], popup_elapsed)
+                            else:
+                                u.faith_popup = None
                 elif u.removed_at is not None:
                     elapsed = pygame.time.get_ticks() - u.removed_at
                     if elapsed < DEATH_FADE_MS:

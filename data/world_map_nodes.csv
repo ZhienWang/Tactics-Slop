@@ -1,9 +1,9 @@
 node_id,name,x,y,type,connections,start
-galilee,Sea of Galilee,352,320,stage,capernaum,1
-capernaum,Capernaum,273,570,town,galilee|cana,0
+galilee,Sea of Galilee,152,780,stage,capernaum,1
+capernaum,Capernaum,300,610,town,galilee|cana,0
 cana,Cana,609,500,stage,capernaum|nazareth|samaria,0
 nazareth,Nazareth,727,258,stage,cana|jericho,0
-samaria,Samaria,727,695,stage,cana|jericho,0
-jericho,Jericho,969,438,town,nazareth|samaria|bethany,0
+samaria,Samaria,657,685,stage,cana|jericho,0
+jericho,Jericho,769,558,town,nazareth|samaria|bethany,0
 bethany,Bethany,1266,563,stage,jericho|jerusalem,0
-jerusalem,Jerusalem,1406,258,stage,bethany,0
+jerusalem,Jerusalem,1206,208,stage,bethany,0
