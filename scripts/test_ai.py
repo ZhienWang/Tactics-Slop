@@ -737,3 +737,46 @@ def test_find_item_target_matches_get_item_targets_for_dead_ally_scope():
     found = game_logic.find_item_target(units_list, 0, 1, "Ankh", "Player")
 
     assert found is fallen_ally
+
+
+# --- equipment (world map gear that carries a flat stat bonus into battle) ---
+
+def set_equipment_registry():
+    game_logic.EQUIPMENT_REGISTRY = {
+        "Bronze Helm": {"slot": "helmet", "stats": {"magic_defense": 8}, "description": ""},
+        "Helmet of Salvation": {"slot": "helmet", "stats": {"faith": 15, "magic_defense": 5}, "description": ""},
+        "Sword of the Spirit": {"slot": "right_hand", "stats": {"magic_attack": 15, "bravery": 10}, "description": ""},
+    }
+
+
+def test_apply_equipment_bonuses_adds_every_equipped_items_stats():
+    set_equipment_registry()
+    unit = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    unit.magic_defense = 10
+    unit.magic_attack = 5
+    unit.faith = 20
+    unit.bravery = 10
+    unit.equipment = {"helmet": "Helmet of Salvation", "right_hand": "Sword of the Spirit"}
+
+    game_logic.apply_equipment_bonuses(unit)
+
+    assert unit.faith == 20 + 15
+    assert unit.magic_defense == 10 + 5
+    assert unit.magic_attack == 5 + 15
+    assert unit.bravery == 10 + 10
+
+
+def test_apply_equipment_bonuses_ignores_empty_slots_and_unknown_items():
+    set_equipment_registry()
+    unit = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    unit.magic_defense = 10
+    unit.equipment = {"helmet": None, "armor": "Something Not In The Catalog", "right_hand": None}
+
+    game_logic.apply_equipment_bonuses(unit)
+
+    assert unit.magic_defense == 10  # unchanged - nothing valid was equipped
+
+
+def test_unit_defaults_to_no_equipment():
+    unit = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    assert unit.equipment == {}

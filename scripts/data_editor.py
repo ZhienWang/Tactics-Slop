@@ -35,6 +35,16 @@ Myrrh,restore_mp,0,ally,1,2,170,110,210
 Frankincense,buff_magic_attack,0.3,ally,1,2,200,150,70
 Mustard Seed,faith_boost,20,ally,2,3,140,220,120"""
 
+EQUIPMENT_CSV_DUMMY = """item_name,slot,stat_1,amount_1,stat_2,amount_2,description
+Bronze Helm,helmet,magic_defense,8,,,A soldier's helm.
+Leather Cuirass,armor,magic_defense,10,,,Boiled leather armor.
+Bronze Greaves,pants,magic_defense,8,,,Fitted bronze leg plates.
+Worn Sandals,sandals,mv,1,,,Well-traveled leather.
+Bronze Shield,left_hand,magic_defense,10,,,A standard-issue shield.
+Bronze Sword,right_hand,magic_attack,10,,,A short sword.
+Simple Cord,necklace,faith,3,,,A plain cord.
+Copper Ring,ring,bravery,3,,,A humble band of copper."""
+
 GAME_SETTINGS_CSV_DUMMY = """setting_name,value
 background_path,"""
 
@@ -185,7 +195,10 @@ def generate_dummy_csv_files():
     with open(os.path.join(DATA_DIR, "items.csv"), "w", newline="") as f:
         f.write(ITEMS_CSV_DUMMY.strip())
 
-    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv, terrain_layout.csv, game_settings.csv, dialogues.csv, items.csv")
+    with open(os.path.join(DATA_DIR, "equipment.csv"), "w", newline="") as f:
+        f.write(EQUIPMENT_CSV_DUMMY.strip())
+
+    print("Successfully generated dummy files: map_layout.csv, skills.csv, characters.csv, terrain_layout.csv, game_settings.csv, dialogues.csv, items.csv, equipment.csv")
 
 
 # --- 2. THE CSV PARSING PIPELINE ---
@@ -235,6 +248,41 @@ def load_items_from_csv(filepath=None):
                 "color": (int(row["r"]), int(row["g"]), int(row["b"])),
             }
     return items_registry
+
+
+# The two ring slots share this same pool; every other slot has its own.
+EQUIPMENT_SLOTS = ["helmet", "armor", "pants", "sandals", "left_hand", "right_hand", "necklace", "ring"]
+UNIT_EQUIPMENT_SLOTS = ["helmet", "armor", "pants", "sandals", "left_hand", "right_hand", "necklace", "ring_1", "ring_2"]
+
+
+def load_equipment_from_csv(filepath=None):
+    """Parses the pregenerated equipment catalog into a dict keyed by item
+    name, each with its slot, stat bonuses, and flavor text."""
+    equipment_registry = {}
+    filepath = filepath or os.path.join(DATA_DIR, "equipment.csv")
+    with open(filepath, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            stats = {}
+            if row.get("stat_1"):
+                stats[row["stat_1"]] = int(row["amount_1"])
+            if row.get("stat_2"):
+                stats[row["stat_2"]] = int(row["amount_2"])
+            equipment_registry[row["item_name"]] = {
+                "slot": row["slot"],
+                "stats": stats,
+                "description": row.get("description", ""),
+            }
+    return equipment_registry
+
+
+def equipment_by_slot(equipment_registry):
+    """Groups the equipment catalog by slot, e.g. grouped["ring"] lists every
+    item either ring slot can equip."""
+    grouped = {slot: [] for slot in EQUIPMENT_SLOTS}
+    for name, data in equipment_registry.items():
+        grouped.setdefault(data["slot"], []).append(name)
+    return grouped
 
 
 def load_terrain_from_csv(filepath=None):

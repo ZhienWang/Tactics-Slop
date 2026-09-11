@@ -5,7 +5,15 @@ import asyncio
 import pygame
 
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, CURSOR_COLOR, FAITH_CAP
-from scripts.data_editor import generate_dummy_csv_files, load_characters_from_csv, load_stage_manifest, load_world_map_nodes
+from scripts.data_editor import (
+    generate_dummy_csv_files,
+    load_characters_from_csv,
+    load_stage_manifest,
+    load_world_map_nodes,
+    load_equipment_from_csv,
+    equipment_by_slot,
+    UNIT_EQUIPMENT_SLOTS,
+)
 from scripts.assets import build_character_portraits, load_image_safe, bring_window_to_front
 from scripts.game_logic import Unit, main as run_battle
 
@@ -37,6 +45,21 @@ STATE_TRANSITION = "TRANSITION"
 STATE_MENU = "MENU"
 STATE_UNIT_LIST = "UNIT_LIST"
 STATE_UNIT_DETAIL = "UNIT_DETAIL"
+STATE_EQUIPMENT = "EQUIPMENT"
+
+# The two ring slots draw from the same "ring" catalog category; every
+# other slot has its own dedicated pool.
+SLOT_CATEGORY = {
+    "helmet": "helmet", "armor": "armor", "pants": "pants", "sandals": "sandals",
+    "left_hand": "left_hand", "right_hand": "right_hand", "necklace": "necklace",
+    "ring_1": "ring", "ring_2": "ring",
+}
+SLOT_LABELS = {
+    "helmet": "Helmet", "armor": "Armor", "pants": "Pants", "sandals": "Sandals",
+    "left_hand": "Left Hand", "right_hand": "Right Hand", "necklace": "Necklace",
+    "ring_1": "Ring 1", "ring_2": "Ring 2",
+}
+EMPTY_SLOT_LABEL = "-- Empty --"
 
 TRAVEL_STEP = 0.045
 MENU_OPTIONS = ["Unit", "Close"]
@@ -173,9 +196,17 @@ def draw_unit_list(surface, font, units, portraits, index):
         surface.blit(font.render(stats_text, True, TEAM_COLOR), (mx + 260, row_y + 6))
 
 
-def draw_unit_detail(surface, font, unit, portraits):
+def unit_detail_layout():
     width, height = 520, 420
     mx, my = SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT // 2 - height // 2
+    panel_rect = pygame.Rect(mx, my, width, height)
+    equip_button = pygame.Rect(mx + width - 140, my + height - 34, 124, 26)
+    return panel_rect, equip_button
+
+
+def draw_unit_detail(surface, font, unit, portraits):
+    panel_rect, equip_button = unit_detail_layout()
+    mx, my, width, height = panel_rect.x, panel_rect.y, panel_rect.width, panel_rect.height
     pygame.draw.rect(surface, PANEL_BG, (mx, my, width, height))
     pygame.draw.rect(surface, PANEL_BORDER, (mx, my, width, height), 2)
     pygame.draw.line(surface, PANEL_BORDER, (mx, my + 46), (mx + width, my + 46), 1)
@@ -212,10 +243,89 @@ def draw_unit_detail(surface, font, unit, portraits):
 
     surface.blit(font.render("[Enter / Esc] Back", True, TEXT_DIM), (mx + 16, my + height - 28))
 
+    pygame.draw.rect(surface, PANEL_BG, equip_button)
+    pygame.draw.rect(surface, PANEL_BORDER, equip_button, 2)
+    label = font.render("[E] Equip", True, PANEL_BORDER)
+    surface.blit(label, label.get_rect(center=equip_button.center))
+
+
+def cycle_equipment(unit, slot_key, direction, equipment_pools):
+    """Moves the item equipped in slot_key forward/backward through that
+    slot's pool (with an explicit empty option at the front)."""
+    pool = [None] + equipment_pools.get(SLOT_CATEGORY[slot_key], [])
+    current = unit.equipment.get(slot_key)
+    current_index = pool.index(current) if current in pool else 0
+    unit.equipment[slot_key] = pool[(current_index + direction) % len(pool)]
+
+
+def equipped_stat_totals(unit, equipment_registry):
+    totals = {}
+    for item_name in unit.equipment.values():
+        item = equipment_registry.get(item_name) if item_name else None
+        if not item:
+            continue
+        for stat, amount in item["stats"].items():
+            totals[stat] = totals.get(stat, 0) + amount
+    return totals
+
+
+def equipment_screen_layout():
+    width = 620
+    height = 100 + len(UNIT_EQUIPMENT_SLOTS) * 36 + 70
+    mx, my = SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT // 2 - height // 2
+    panel_rect = pygame.Rect(mx, my, width, height)
+    row_rects = [pygame.Rect(mx + 16, my + 90 + idx * 36, width - 32, 30) for idx in range(len(UNIT_EQUIPMENT_SLOTS))]
+    left_arrows = [pygame.Rect(r.right - 210, r.y, 26, r.height) for r in row_rects]
+    right_arrows = [pygame.Rect(r.right - 26, r.y, 26, r.height) for r in row_rects]
+    return panel_rect, row_rects, left_arrows, right_arrows
+
+
+def draw_equipment_screen(surface, font, unit, portraits, slot_index, equipment_registry):
+    panel_rect, row_rects, left_arrows, right_arrows = equipment_screen_layout()
+    mx, my, width, height = panel_rect.x, panel_rect.y, panel_rect.width, panel_rect.height
+    pygame.draw.rect(surface, PANEL_BG, panel_rect)
+    pygame.draw.rect(surface, PANEL_BORDER, panel_rect, 2)
+    pygame.draw.line(surface, PANEL_BORDER, (mx, my + 46), (mx + width, my + 46), 1)
+
+    portrait = portraits.get(unit.name)
+    if portrait:
+        thumb = pygame.transform.smoothscale(portrait, (100, 50))
+        surface.blit(thumb, (mx + 16, my + 56))
+    surface.blit(font.render(f"{unit.name} - Equipment", True, PANEL_BORDER), (mx + 16, my + 12))
+    surface.blit(font.render(unit.char_class, True, TEXT_DIM), (mx + 130, my + 62))
+
+    for idx, slot_key in enumerate(UNIT_EQUIPMENT_SLOTS):
+        row = row_rects[idx]
+        selected = idx == slot_index
+        if selected:
+            pygame.draw.rect(surface, (35, 35, 55), row)
+        item_name = unit.equipment.get(slot_key)
+        item_text = item_name if item_name else EMPTY_SLOT_LABEL
+        label_color = PANEL_BORDER if selected else TEXT_MAIN
+        pointer = "-> " if selected else "   "
+        surface.blit(font.render(f"{pointer}{SLOT_LABELS[slot_key]}", True, label_color), (row.x, row.y + 4))
+        surface.blit(font.render(item_text, True, TEAM_COLOR if item_name else TEXT_DIM), (row.x + 190, row.y + 4))
+
+        arrow_color = PANEL_BORDER if selected else TEXT_DIM
+        surface.blit(font.render("<", True, arrow_color), left_arrows[idx].topleft)
+        surface.blit(font.render(">", True, arrow_color), right_arrows[idx].topleft)
+
+    equipped_item = unit.equipment.get(UNIT_EQUIPMENT_SLOTS[slot_index])
+    description = ""
+    if equipped_item and equipped_item in equipment_registry:
+        description = equipment_registry[equipped_item]["description"]
+    desc_y = my + 90 + len(UNIT_EQUIPMENT_SLOTS) * 36 + 6
+    surface.blit(font.render(description, True, TEXT_DIM), (mx + 16, desc_y))
+
+    totals = equipped_stat_totals(unit, equipment_registry)
+    totals_text = "  ".join(f"+{amount} {stat.replace('_', ' ').title()}" for stat, amount in totals.items()) or "No bonuses equipped."
+    surface.blit(font.render(totals_text, True, (255, 215, 0)), (mx + 16, my + height - 50))
+    surface.blit(font.render("[Left/Right] Change item   [Up/Down] Select slot   [Esc] Back", True, TEXT_DIM), (mx + 16, my + height - 26))
+
 
 async def main():
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-    required_files = ["map_layout.csv", "skills.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
+    required_files = ["map_layout.csv", "skills.csv", "items.csv", "equipment.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
     if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
         generate_dummy_csv_files()
 
@@ -242,6 +352,9 @@ async def main():
     if leader and portraits.get(leader.name):
         leader_icon = pygame.transform.smoothscale(portraits[leader.name], (84, 42))
 
+    equipment_registry = load_equipment_from_csv()
+    equipment_pools = equipment_by_slot(equipment_registry)
+
     state = STATE_MAP
     current_node = START_NODE
     visited = {START_NODE}
@@ -252,11 +365,13 @@ async def main():
     menu_index = 0
     unit_index = 0
     selected_unit = None
+    equip_slot_index = 0
 
     menu_button = pygame.Rect(SCREEN_WIDTH - 130, 20, 110, 34)
 
     async def enter_battle(node_id):
-        await run_battle(stage=stage_manifest.get(node_id))
+        equipment_loadout = {u.name: dict(u.equipment) for u in units}
+        await run_battle(stage=stage_manifest.get(node_id), equipment_loadout=equipment_loadout)
         pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Tactics Engine: World Map")
 
@@ -310,7 +425,28 @@ async def main():
                         menu_index = 0
 
                 elif state == STATE_UNIT_DETAIL:
-                    state = STATE_UNIT_LIST
+                    _, equip_button = unit_detail_layout()
+                    if equip_button.collidepoint(event.pos):
+                        state = STATE_EQUIPMENT
+                        equip_slot_index = 0
+                    else:
+                        state = STATE_UNIT_LIST
+
+                elif state == STATE_EQUIPMENT:
+                    panel_rect, row_rects, left_arrows, right_arrows = equipment_screen_layout()
+                    left_hit = next((idx for idx, rect in enumerate(left_arrows) if rect.collidepoint(event.pos)), None)
+                    right_hit = next((idx for idx, rect in enumerate(right_arrows) if rect.collidepoint(event.pos)), None)
+                    row_hit = next((idx for idx, rect in enumerate(row_rects) if rect.collidepoint(event.pos)), None)
+                    if left_hit is not None:
+                        equip_slot_index = left_hit
+                        cycle_equipment(selected_unit, UNIT_EQUIPMENT_SLOTS[left_hit], -1, equipment_pools)
+                    elif right_hit is not None:
+                        equip_slot_index = right_hit
+                        cycle_equipment(selected_unit, UNIT_EQUIPMENT_SLOTS[right_hit], 1, equipment_pools)
+                    elif row_hit is not None:
+                        equip_slot_index = row_hit
+                    elif not panel_rect.collidepoint(event.pos):
+                        state = STATE_UNIT_DETAIL
 
             elif event.type == pygame.KEYDOWN:
                 if state == STATE_MAP:
@@ -360,8 +496,23 @@ async def main():
                         state = STATE_UNIT_DETAIL
 
                 elif state == STATE_UNIT_DETAIL:
-                    if event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
+                    if event.key == pygame.K_e:
+                        state = STATE_EQUIPMENT
+                        equip_slot_index = 0
+                    elif event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
                         state = STATE_UNIT_LIST
+
+                elif state == STATE_EQUIPMENT:
+                    if event.key == pygame.K_UP:
+                        equip_slot_index = (equip_slot_index - 1) % len(UNIT_EQUIPMENT_SLOTS)
+                    elif event.key == pygame.K_DOWN:
+                        equip_slot_index = (equip_slot_index + 1) % len(UNIT_EQUIPMENT_SLOTS)
+                    elif event.key == pygame.K_LEFT:
+                        cycle_equipment(selected_unit, UNIT_EQUIPMENT_SLOTS[equip_slot_index], -1, equipment_pools)
+                    elif event.key == pygame.K_RIGHT:
+                        cycle_equipment(selected_unit, UNIT_EQUIPMENT_SLOTS[equip_slot_index], 1, equipment_pools)
+                    elif event.key == pygame.K_ESCAPE:
+                        state = STATE_UNIT_DETAIL
 
         if state == STATE_TRANSITION:
             transition_progress = min(1.0, transition_progress + TRAVEL_STEP)
@@ -406,6 +557,8 @@ async def main():
             draw_unit_list(screen, font, units, portraits, unit_index)
         elif state == STATE_UNIT_DETAIL and selected_unit:
             draw_unit_detail(screen, font, selected_unit, portraits)
+        elif state == STATE_EQUIPMENT and selected_unit:
+            draw_equipment_screen(screen, font, selected_unit, portraits, equip_slot_index, equipment_registry)
 
         pygame.display.flip()
         await asyncio.sleep(0)

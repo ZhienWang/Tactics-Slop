@@ -1,0 +1,25 @@
+item_name,slot,stat_1,amount_1,stat_2,amount_2,description
+Linen Headscarf,helmet,patience,5,,,A simple woven wrap against the sun.
+Bronze Helm,helmet,magic_defense,8,,,Standard-issue protection for a soldier's brow.
+Helmet of Salvation,helmet,faith,15,magic_defense,5,"""Take the helmet of salvation"" (Ephesians 6:17)."
+Simple Tunic,armor,love,5,,,Plain woven cloth worn by fishermen and travelers alike.
+Leather Cuirass,armor,magic_defense,10,,,Boiled leather favored by Roman auxiliaries.
+Breastplate of Righteousness,armor,magic_defense,15,bravery,10,"""Having on the breastplate of righteousness"" (Ephesians 6:14)."
+Woven Leggings,pants,patience,5,,,Simple leg wraps for long journeys.
+Bronze Greaves,pants,magic_defense,8,,,Fitted bronze plates worn below the knee.
+Belt of Truth,pants,bravery,10,patience,10,"""Having your loins girt about with truth"" (Ephesians 6:14)."
+Worn Sandals,sandals,mv,1,,,Well-traveled leather soft underfoot.
+Leather Boots,sandals,speed,1,,,Sturdy boots favored by messengers.
+Shoes of the Gospel of Peace,sandals,mv,2,love,5,"""Your feet shod with the preparation of the gospel of peace"" (Ephesians 6:15)."
+Wooden Buckler,left_hand,magic_defense,5,,,A small round shield light enough for a quick block.
+Bronze Shield,left_hand,magic_defense,10,,,A soldier's standard-issue shield.
+Shield of Faith,left_hand,magic_defense,20,faith,10,"""Above all, taking the shield of faith"" (Ephesians 6:16)."
+Wooden Staff,right_hand,magic_attack,5,,,A shepherd's staff worn smooth with travel.
+Bronze Sword,right_hand,magic_attack,10,,,A soldier's short sword.
+Sword of the Spirit,right_hand,magic_attack,15,bravery,10,"""The sword of the Spirit, which is the word of God"" (Ephesians 6:17)."
+Simple Cord,necklace,faith,3,,,A plain cord worn close to the heart.
+Silver Chain,necklace,love,5,,,A modest chain often a family keepsake.
+Amulet of Devotion,necklace,faith,10,patience,5,A small pendant etched with a prayer.
+Copper Ring,ring,bravery,3,,,A humble band of copper.
+Silver Ring,ring,magic_attack,5,,,A polished silver band.
+Ring of Steadfastness,ring,patience,8,bravery,5,Engraved with a verse on endurance.

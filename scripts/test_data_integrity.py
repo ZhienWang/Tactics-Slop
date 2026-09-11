@@ -16,6 +16,10 @@ from scripts.data_editor import (
     load_characters_from_csv,
     load_world_map_nodes,
     load_items_from_csv,
+    load_equipment_from_csv,
+    equipment_by_slot,
+    EQUIPMENT_SLOTS,
+    UNIT_EQUIPMENT_SLOTS,
     TERRAIN_THEMES,
     STAGE_THEMES,
     TERRAIN_TILE_WEIGHTS,
@@ -267,3 +271,39 @@ def test_ankh_revive_rate_stays_within_a_sane_fraction_of_the_users_faith():
     ankh = items["Ankh"]
     assert ankh["effect"] == "revive"
     assert 0 < ankh["amount"] <= 1  # a fraction of the reviver's own Faith, never more than all of it
+
+
+# --- equipment.csv (pregenerated gear catalog for the world map's Equipment screen) ---
+
+VALID_EQUIPMENT_STATS = {
+    "magic_attack", "magic_defense", "faith", "bravery", "patience", "love", "speed", "mv", "jump",
+}
+
+
+def unit_slot_category(slot_key):
+    return "ring" if slot_key.startswith("ring_") else slot_key
+
+
+def test_equipment_csv_covers_every_unit_slot_category():
+    equipment = load_equipment_from_csv()
+    grouped = equipment_by_slot(equipment)
+    slot_categories = {unit_slot_category(slot) for slot in UNIT_EQUIPMENT_SLOTS}
+    for category in slot_categories:
+        assert category in EQUIPMENT_SLOTS
+        assert len(grouped[category]) >= 1, f"no items exist for slot category {category!r}"
+
+
+def test_equipment_items_only_use_known_stats_and_positive_amounts():
+    equipment = load_equipment_from_csv()
+    for name, data in equipment.items():
+        assert data["slot"] in EQUIPMENT_SLOTS, f"{name} has an unrecognized slot: {data['slot']}"
+        assert 1 <= len(data["stats"]) <= 2, f"{name} should grant 1-2 stat bonuses, has {len(data['stats'])}"
+        for stat, amount in data["stats"].items():
+            assert stat in VALID_EQUIPMENT_STATS, f"{name} grants an unrecognized stat: {stat}"
+            assert amount > 0, f"{name}'s bonus to {stat} isn't positive"
+
+
+def test_ring_slots_share_a_single_catalog_category():
+    equipment = load_equipment_from_csv()
+    grouped = equipment_by_slot(equipment)
+    assert grouped["ring"], "the shared 'ring' category should have items for both ring slots to draw from"

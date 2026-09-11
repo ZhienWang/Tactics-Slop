@@ -10,6 +10,7 @@ from scripts.data_editor import (
     load_map_from_csv,
     load_skills_from_csv,
     load_items_from_csv,
+    load_equipment_from_csv,
     load_terrain_from_csv,
     load_settings_from_csv,
     load_dialogues_from_csv,
@@ -48,6 +49,7 @@ MAP_ROWS = 0
 MAP_COLS = 0
 SKILL_REGISTRY = {}
 ITEM_REGISTRY = {}
+EQUIPMENT_REGISTRY = {}
 CHARACTER_ROSTER = []
 TERRAIN_LAYOUT = []
 
@@ -86,9 +88,29 @@ class Unit:
         self.bravery = data.get("bravery", 25)
         self.patience = data.get("patience", 25)
         self.love = data.get("love", 25)
+        # {slot: item_name or None}, set on the world map's Equipment screen
+        # and applied once as a flat stat bonus when a battle begins.
+        self.equipment = data.get("equipment") or {}
 
     def is_alive(self):
         return not self.removed
+
+
+def apply_equipment_bonuses(unit, equipment_registry=None):
+    """Adds each equipped item's flat stat bonuses onto a freshly-built
+    Unit, once, at battle start - equipment is chosen on the world map's
+    Equipment screen, not mid-battle, so there's no un-equip case to
+    handle here."""
+    registry = equipment_registry if equipment_registry is not None else EQUIPMENT_REGISTRY
+    for item_name in unit.equipment.values():
+        if not item_name:
+            continue
+        item = registry.get(item_name)
+        if not item:
+            continue
+        for stat, amount in item["stats"].items():
+            if hasattr(unit, stat):
+                setattr(unit, stat, getattr(unit, stat) + amount)
 
 
 def unit_is_in_water(unit):
@@ -837,12 +859,12 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
         pygame.draw.polygon(surface, (255, 60, 60), [(cx, cy - 28), (cx - 5, cy - 35), (cx + 5, cy - 35)])
 
 
-async def main(stage=None):
-    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
+async def main(stage=None, equipment_loadout=None):
+    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, EQUIPMENT_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     if stage is None:
-        required_files = ["map_layout.csv", "skills.csv", "items.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
+        required_files = ["map_layout.csv", "skills.csv", "items.csv", "equipment.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
         if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
             generate_dummy_csv_files()
 
@@ -854,6 +876,7 @@ async def main(stage=None):
         MAP_DATA = [[int(v) for v in line.split(",")] for line in generate_map_csv(8, 8, seed=seed).splitlines()]
     SKILL_REGISTRY = load_skills_from_csv()
     ITEM_REGISTRY = load_items_from_csv()
+    EQUIPMENT_REGISTRY = load_equipment_from_csv()
     CHARACTER_ROSTER = load_characters_from_csv(stage.get("characters") if stage else None)
     MAP_ROWS = len(MAP_DATA)
     MAP_COLS = len(MAP_DATA[0]) if MAP_DATA else 0
@@ -903,7 +926,15 @@ async def main(stage=None):
     if not background_path:
         background_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bg.jpg")
 
-    units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
+    def spawn_units():
+        spawned = [Unit(char_data) for char_data in CHARACTER_ROSTER]
+        if equipment_loadout:
+            for unit in spawned:
+                unit.equipment = dict(equipment_loadout.get(unit.name, {}))
+                apply_equipment_bonuses(unit, EQUIPMENT_REGISTRY)
+        return spawned
+
+    units = spawn_units()
     # Only the Player side carries a satchel of supplies into battle.
     team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
     dialogues = load_dialogues_from_csv(map_id=stage["node_id"] if stage else "jerusalem")
@@ -1081,7 +1112,7 @@ async def main(stage=None):
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if restart_button.collidepoint(event.pos):
                         # Restart game
-                        units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
+                        units = spawn_units()
                         game_state = "TICKING"
                         active_unit = None
                         current_menu = main_menu
@@ -1097,7 +1128,7 @@ async def main(stage=None):
                 elif event.type == pygame.KEYDOWN:
                     if event.key in [pygame.K_SPACE, pygame.K_RETURN]:
                         # Restart game with keyboard
-                        units = [Unit(char_data) for char_data in CHARACTER_ROSTER]
+                        units = spawn_units()
                         game_state = "TICKING"
                         active_unit = None
                         current_menu = main_menu
