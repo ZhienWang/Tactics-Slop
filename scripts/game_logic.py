@@ -26,7 +26,6 @@ from scripts.config import (
     TILE_WIDTH,
     TILE_HEIGHT,
     BG_COLOR,
-    GRID_COLOR,
     CURSOR_COLOR,
     FAITH_CAP,
     CLASS_SKILLSETS,
@@ -34,6 +33,7 @@ from scripts.config import (
 from scripts.assets import (
     load_background_image,
     cache_terrain_images,
+    cache_terrain_colors,
     build_character_portraits,
     draw_tile_texture,
     create_projectile_surface,
@@ -487,21 +487,27 @@ def iso_to_screen(map_x, map_y, map_z, origin_x, origin_y, rotation=0, map_cols=
     return screen_x, screen_y
 
 
-def draw_iso_tile(surface, sx, sy, height, color, terrain_image=None, zoom=1.0):
+# Every tile draws with at least this much visible side-wall "thickness,"
+# even at height 0, so the map reads as a grid of resting cubes/blocks
+# rather than flat painted diamonds. Elevation adds on top of this base.
+TILE_DEPTH_BASE = 16
+
+
+def draw_iso_tile(surface, sx, sy, height, color, terrain_image=None, zoom=1.0, wall_color=None):
     tile_width = TILE_WIDTH * zoom
     tile_height = TILE_HEIGHT * zoom
-    h_offset = height * 14 * zoom
+    h_offset = (height * 14 + TILE_DEPTH_BASE) * zoom
     top_points = [
         (sx, sy),
         (sx + tile_width / 2, sy + tile_height / 2),
         (sx, sy + tile_height),
         (sx - tile_width / 2, sy + tile_height / 2)
     ]
-    if height > 0:
-        left_wall = [top_points[3], top_points[2], (top_points[2][0], top_points[2][1] + h_offset), (top_points[3][0], top_points[3][1] + h_offset)]
-        pygame.draw.polygon(surface, (int(color[0]*0.5), int(color[1]*0.5), int(color[2]*0.5)), left_wall)
-        right_wall = [top_points[2], top_points[1], (top_points[1][0], top_points[1][1] + h_offset), (top_points[2][0], top_points[2][1] + h_offset)]
-        pygame.draw.polygon(surface, (int(color[0]*0.7), int(color[1]*0.7), int(color[2]*0.7)), right_wall)
+    wall_base = wall_color if wall_color is not None else color
+    left_wall = [top_points[3], top_points[2], (top_points[2][0], top_points[2][1] + h_offset), (top_points[3][0], top_points[3][1] + h_offset)]
+    pygame.draw.polygon(surface, (int(wall_base[0]*0.5), int(wall_base[1]*0.5), int(wall_base[2]*0.5)), left_wall)
+    right_wall = [top_points[2], top_points[1], (top_points[1][0], top_points[1][1] + h_offset), (top_points[2][0], top_points[2][1] + h_offset)]
+    pygame.draw.polygon(surface, (int(wall_base[0]*0.7), int(wall_base[1]*0.7), int(wall_base[2]*0.7)), right_wall)
 
     if terrain_image:
         image = pygame.transform.smoothscale(terrain_image, (round(tile_width), round(tile_height)))
@@ -510,7 +516,6 @@ def draw_iso_tile(surface, sx, sy, height, color, terrain_image=None, zoom=1.0):
         pygame.draw.polygon(surface, color, top_points)
         draw_tile_texture(surface, top_points, height, color)
 
-    pygame.draw.polygon(surface, GRID_COLOR, top_points, 1)
     return top_points
 
 
@@ -651,6 +656,7 @@ async def main(stage=None):
 
     background_image = load_background_image(background_path, invalid_assets)
     terrain_image_cache = cache_terrain_images(TERRAIN_LAYOUT, invalid_assets)
+    terrain_color_cache = cache_terrain_colors(terrain_image_cache)
 
     game_state = "TICKING"
     active_unit = None
@@ -1203,9 +1209,8 @@ async def main(stage=None):
                     (sx, sy + TILE_HEIGHT),
                     (sx - TILE_WIDTH // 2, sy + TILE_HEIGHT // 2),
                 ])
-            top_pts = draw_iso_tile(screen, sx, sy, z, tuple(tile_color), terrain_image, map_zoom)
-            if terrain_image and terrain_path.lower().endswith("stone.png"):
-                pygame.draw.polygon(screen, (175, 180, 190), top_pts, 1)
+            wall_color = terrain_color_cache.get(terrain_path)
+            top_pts = draw_iso_tile(screen, sx, sy, z, tuple(tile_color), terrain_image, map_zoom, wall_color=wall_color)
             if game_state == "MOVE_SELECT" and (x, y) in valid_tiles:
                 pygame.draw.polygon(screen, (30, 120, 255), top_pts)
                 pygame.draw.polygon(screen, (255, 255, 255), top_pts, 2)

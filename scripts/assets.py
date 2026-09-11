@@ -108,6 +108,22 @@ def cache_terrain_images(terrain_layout, invalid_assets):
     return terrain_image_cache
 
 
+def average_tile_color(image):
+    """Cheap average color of a texture (downscale to 1x1), used so a
+    tile's cube side-walls shade toward its own texture's color instead of
+    a generic grey."""
+    tiny = pygame.transform.smoothscale(image, (1, 1))
+    return tiny.get_at((0, 0))[:3]
+
+
+def cache_terrain_colors(terrain_image_cache):
+    return {
+        path: average_tile_color(image)
+        for path, image in terrain_image_cache.items()
+        if image
+    }
+
+
 def build_character_portraits(units, invalid_assets):
     portraits = {}
     for u in units:
