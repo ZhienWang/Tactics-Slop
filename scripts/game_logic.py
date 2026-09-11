@@ -284,10 +284,35 @@ def kill_unit(target):
     target.removed_at = pygame.time.get_ticks()
 
 
+PHYSICAL_BASE_HIT_CHANCE = 0.85
+ELEVATION_HIT_BONUS_PER_TILE = 0.08
+PHYSICAL_MIN_HIT_CHANCE = 0.5
+PHYSICAL_MAX_HIT_CHANCE = 0.98
+
+
+def tile_elevation(x, y):
+    if 0 <= y < len(MAP_DATA) and 0 <= x < len(MAP_DATA[y]):
+        return MAP_DATA[y][x]
+    return 0
+
+
+def physical_hit_chance(attacker, target):
+    """Attacking from higher ground is easier to land; attacking uphill is
+    harder - elevation previously had no effect on combat at all beyond
+    how far a unit could see/reach. A staple of the genre (Final Fantasy
+    Tactics, Tactics Ogre)."""
+    elevation_diff = tile_elevation(attacker.x, attacker.y) - tile_elevation(target.x, target.y)
+    chance = PHYSICAL_BASE_HIT_CHANCE + elevation_diff * ELEVATION_HIT_BONUS_PER_TILE
+    return max(PHYSICAL_MIN_HIT_CHANCE, min(PHYSICAL_MAX_HIT_CHANCE, chance))
+
+
 def resolve_physical_hit(attacker, target, skill_name):
-    """Resolve a Physical-type skill's hit on a target. A guarded target
-    blocks it (consuming the guard) instead of being removed. Returns
+    """Resolve a Physical-type skill's hit on a target. May miss outright
+    (see physical_hit_chance); otherwise a guarded target blocks it
+    (consuming the guard) instead of being removed. Returns
     (killed, message)."""
+    if random.random() >= physical_hit_chance(attacker, target):
+        return False, f"{attacker.name}'s {skill_name} misses {target.name}!"
     if target.guarded:
         target.guarded = False
         return False, f"{target.name} guards against {attacker.name}'s {skill_name} and holds their ground!"

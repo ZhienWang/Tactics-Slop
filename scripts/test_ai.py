@@ -212,9 +212,11 @@ def test_defend_sets_guarded_flag_on_target():
 
 
 def test_resolve_physical_hit_kills_unguarded_target():
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
     attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
     target = make_unit("Peter", "Player", 0, 1, 0, 0, [])
 
+    random.seed(1)  # a hit at the flat-ground (base) hit chance
     killed, message = game_logic.resolve_physical_hit(attacker, target, "Slash")
 
     assert killed is True
@@ -224,16 +226,75 @@ def test_resolve_physical_hit_kills_unguarded_target():
 
 
 def test_resolve_physical_hit_blocked_by_guard_and_consumes_it():
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
     attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
     target = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
     target.guarded = True
 
+    random.seed(1)  # must land the hit first for a guard to have something to block
     killed, message = game_logic.resolve_physical_hit(attacker, target, "Slash")
 
     assert killed is False
     assert target.is_alive()
     assert target.guarded is False  # guard is a one-time block, consumed either way
     assert "guards against" in message
+
+
+def test_resolve_physical_hit_can_miss_outright():
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
+    attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
+    target = make_unit("Peter", "Player", 0, 1, 0, 0, [])
+
+    random.seed(2)  # a miss at the flat-ground (base) hit chance
+    killed, message = game_logic.resolve_physical_hit(attacker, target, "Slash")
+
+    assert killed is False
+    assert target.is_alive()
+    assert "misses" in message
+
+
+# --- physical_hit_chance (elevation affecting Physical accuracy) ---
+
+def test_physical_hit_chance_is_base_rate_on_flat_ground():
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
+    attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
+    target = make_unit("Peter", "Player", 0, 1, 0, 0, [])
+
+    assert game_logic.physical_hit_chance(attacker, target) == game_logic.PHYSICAL_BASE_HIT_CHANCE
+
+
+def test_physical_hit_chance_favors_attacking_from_higher_ground():
+    game_logic.MAP_DATA = [
+        [1, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+    ]
+    high_ground_attacker = make_unit("Archer", "Enemy", 0, 0, 0, 0, [])  # elevation 1
+    low_ground_attacker = make_unit("Archer2", "Enemy", 1, 0, 0, 0, [])  # elevation 0
+    target = make_unit("Peter", "Player", 2, 0, 0, 0, [])  # elevation 0
+
+    high_chance = game_logic.physical_hit_chance(high_ground_attacker, target)
+    low_chance = game_logic.physical_hit_chance(low_ground_attacker, target)
+
+    assert high_chance > low_chance
+    assert high_chance == game_logic.PHYSICAL_BASE_HIT_CHANCE + game_logic.ELEVATION_HIT_BONUS_PER_TILE
+    assert low_chance == game_logic.PHYSICAL_BASE_HIT_CHANCE
+    assert low_chance == game_logic.PHYSICAL_BASE_HIT_CHANCE
+
+
+def test_physical_hit_chance_is_clamped_to_sane_bounds():
+    game_logic.MAP_DATA = [
+        [50, 0],
+        [0, 50],
+    ]
+    attacker_way_above = make_unit("A", "Enemy", 0, 0, 0, 0, [])  # elevation 50
+    target_below = make_unit("TargetBelow", "Player", 1, 0, 0, 0, [])  # elevation 0
+    attacker_way_below = make_unit("B", "Enemy", 0, 1, 0, 0, [])  # elevation 0
+    target_above = make_unit("TargetAbove", "Player", 1, 1, 0, 0, [])  # elevation 50
+
+    assert game_logic.physical_hit_chance(attacker_way_above, target_below) == game_logic.PHYSICAL_MAX_HIT_CHANCE
+    assert game_logic.physical_hit_chance(attacker_way_below, target_above) == game_logic.PHYSICAL_MIN_HIT_CHANCE
 
 
 def test_choose_ai_action_targets_ally_with_support_skill():
