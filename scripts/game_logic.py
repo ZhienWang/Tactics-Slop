@@ -296,22 +296,57 @@ def tile_elevation(x, y):
     return 0
 
 
-def physical_hit_chance(attacker, target):
+# Job/class passives: each class fights a little differently rather than
+# sharing one generic statline, per FFT/Tactics Ogre convention.
+CLASS_HIT_BONUS = {"Soldier": 0.05, "Sergeant": 0.05}
+CLASS_IGNORES_UPHILL_PENALTY = {"Archer"}
+CLASS_PREACH_MULTIPLIER = {"Prophet": 1.5}
+CLASS_SHOVE_DISTANCE = {"Sergeant": 3}
+OFFICER_AURA_CLASS = "Officer"
+OFFICER_AURA_RANGE = 2
+OFFICER_AURA_HIT_BONUS = 0.1
+
+
+def officer_aura_bonus(attacker, units_list):
+    """Officers steady nearby troops, granting allies within command range
+    a hit-chance bonus."""
+    if not units_list:
+        return 0.0
+    for u in units_list:
+        if (
+            u is not attacker
+            and u.team == attacker.team
+            and u.char_class == OFFICER_AURA_CLASS
+            and u.is_alive()
+            and abs(u.x - attacker.x) + abs(u.y - attacker.y) <= OFFICER_AURA_RANGE
+        ):
+            return OFFICER_AURA_HIT_BONUS
+    return 0.0
+
+
+def physical_hit_chance(attacker, target, units_list=None):
     """Attacking from higher ground is easier to land; attacking uphill is
     harder - elevation previously had no effect on combat at all beyond
     how far a unit could see/reach. A staple of the genre (Final Fantasy
-    Tactics, Tactics Ogre)."""
+    Tactics, Tactics Ogre). Archers are trained to compensate for uphill
+    shots and never suffer the elevation penalty (though they still enjoy
+    the bonus of high ground). Soldiers/Sergeants fight with steadier aim,
+    and any Officer nearby further steadies their allies' hand."""
     elevation_diff = tile_elevation(attacker.x, attacker.y) - tile_elevation(target.x, target.y)
+    if attacker.char_class in CLASS_IGNORES_UPHILL_PENALTY:
+        elevation_diff = max(0, elevation_diff)
     chance = PHYSICAL_BASE_HIT_CHANCE + elevation_diff * ELEVATION_HIT_BONUS_PER_TILE
+    chance += CLASS_HIT_BONUS.get(attacker.char_class, 0.0)
+    chance += officer_aura_bonus(attacker, units_list)
     return max(PHYSICAL_MIN_HIT_CHANCE, min(PHYSICAL_MAX_HIT_CHANCE, chance))
 
 
-def resolve_physical_hit(attacker, target, skill_name):
+def resolve_physical_hit(attacker, target, skill_name, units_list=None):
     """Resolve a Physical-type skill's hit on a target. May miss outright
     (see physical_hit_chance); otherwise a guarded target blocks it
     (consuming the guard) instead of being removed. Returns
     (killed, message)."""
-    if random.random() >= physical_hit_chance(attacker, target):
+    if random.random() >= physical_hit_chance(attacker, target, units_list):
         return False, f"{attacker.name}'s {skill_name} misses {target.name}!"
     if target.guarded:
         target.guarded = False
@@ -340,7 +375,7 @@ def apply_skill_status(skill_name, caster, target, units_list):
         if random.random() >= SHOVE_CHANCE:
             return False
         target.stunned_turns = 1
-        push_unit_away(caster, target, units_list)
+        push_unit_away(caster, target, units_list, tiles=CLASS_SHOVE_DISTANCE.get(caster.char_class, SHOVE_DISTANCE))
         return True
     if skill_name == "Command":
         target.ct = min(100, target.ct + COMMAND_CT_BOOST)
@@ -355,7 +390,7 @@ FAITH_TRANSFER_RATE = 0.2
 
 
 def apply_preach(preacher, target):
-    gain = preacher.faith * FAITH_TRANSFER_RATE
+    gain = preacher.faith * FAITH_TRANSFER_RATE * CLASS_PREACH_MULTIPLIER.get(preacher.char_class, 1.0)
     faith_before = target.faith
     target.faith = max(0, min(FAITH_CAP, target.faith + gain))
     actual_gain = target.faith - faith_before
@@ -909,7 +944,7 @@ async def main(stage=None):
                             game_state = "AI_PAUSE"
                             ai_pause_until = pygame.time.get_ticks() + AI_ACTION_DELAY_MS
                         elif rules["type"] == "Physical":
-                            killed, combat_log = resolve_physical_hit(active_unit, target_unit, ai_choice["skill"])
+                            killed, combat_log = resolve_physical_hit(active_unit, target_unit, ai_choice["skill"], units)
                             if killed and attack_sound:
                                 attack_sound.play()
                             active_unit.has_acted = True
@@ -1147,7 +1182,7 @@ async def main(stage=None):
                                     elif target_unit and rules["type"] == "Heal":
                                         combat_log = apply_preach(active_unit, target_unit)
                                     elif target_unit and rules["type"] == "Physical":
-                                        killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill)
+                                        killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill, units)
                                         if killed and attack_sound:
                                             attack_sound.play()
                                     elif target_unit:
@@ -1310,7 +1345,7 @@ async def main(stage=None):
                                 elif target_unit and rules["type"] == "Heal":
                                     combat_log = apply_preach(active_unit, target_unit)
                                 elif target_unit and rules["type"] == "Physical":
-                                    killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill)
+                                    killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill, units)
                                     if killed and attack_sound:
                                         attack_sound.play()
                                 elif target_unit:
@@ -1335,7 +1370,7 @@ async def main(stage=None):
             if active_projectile["progress"] >= 1.0:
                 target_unit = active_projectile["target"]
                 if target_unit and target_unit.is_alive():
-                    _, combat_log = resolve_physical_hit(active_projectile["attacker"], target_unit, active_projectile["skill"])
+                    _, combat_log = resolve_physical_hit(active_projectile["attacker"], target_unit, active_projectile["skill"], units)
                 else:
                     combat_log = f"{active_projectile['attacker'].name}'s arrow fell short."
                 active_projectile["attacker"].has_acted = True

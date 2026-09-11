@@ -8,11 +8,11 @@ from scripts import game_logic
 from scripts.data_editor import load_dialogues_from_csv, load_skills_from_csv, load_characters_from_csv
 
 
-def make_unit(name, team, x, y, faith, mp, skills):
+def make_unit(name, team, x, y, faith, mp, skills, char_class="Knight"):
     return game_logic.Unit({
         "name": name,
         "team": team,
-        "class": "Knight",
+        "class": char_class,
         "x": x,
         "y": y,
         "speed": 10,
@@ -280,7 +280,6 @@ def test_physical_hit_chance_favors_attacking_from_higher_ground():
     assert high_chance > low_chance
     assert high_chance == game_logic.PHYSICAL_BASE_HIT_CHANCE + game_logic.ELEVATION_HIT_BONUS_PER_TILE
     assert low_chance == game_logic.PHYSICAL_BASE_HIT_CHANCE
-    assert low_chance == game_logic.PHYSICAL_BASE_HIT_CHANCE
 
 
 def test_physical_hit_chance_is_clamped_to_sane_bounds():
@@ -498,3 +497,101 @@ def test_predict_turn_order_empty_when_no_living_units():
     dead.removed = True
 
     assert game_logic.predict_turn_order([dead], count=5) == []
+
+
+# --- job/class passives ---
+
+def test_soldier_and_sergeant_get_flat_hit_bonus():
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
+    target = make_unit("Peter", "Player", 0, 1, 0, 0, [])
+    knight = make_unit("Grunt", "Enemy", 0, 0, 0, 0, [], char_class="Knight")
+    soldier = make_unit("Soldier1", "Enemy", 0, 0, 0, 0, [], char_class="Soldier")
+    sergeant = make_unit("Sarge", "Enemy", 0, 0, 0, 0, [], char_class="Sergeant")
+
+    baseline = game_logic.physical_hit_chance(knight, target)
+
+    assert game_logic.physical_hit_chance(soldier, target) == baseline + game_logic.CLASS_HIT_BONUS["Soldier"]
+    assert game_logic.physical_hit_chance(sergeant, target) == baseline + game_logic.CLASS_HIT_BONUS["Sergeant"]
+
+
+def test_archer_ignores_uphill_penalty_but_keeps_downhill_bonus():
+    game_logic.MAP_DATA = [
+        [0, 3],
+        [0, 0],
+    ]
+    archer = make_unit("Bowman", "Enemy", 0, 0, 0, 0, [], char_class="Archer")  # elevation 0
+    knight = make_unit("Grunt", "Enemy", 0, 0, 0, 0, [], char_class="Knight")  # elevation 0
+    target_above = make_unit("Peter", "Player", 1, 0, 0, 0, [])  # elevation 3, uphill shot
+
+    archer_chance = game_logic.physical_hit_chance(archer, target_above)
+    knight_chance = game_logic.physical_hit_chance(knight, target_above)
+
+    assert archer_chance == game_logic.PHYSICAL_BASE_HIT_CHANCE  # penalty ignored, floors at base rate
+    assert knight_chance < archer_chance  # a non-archer still suffers the uphill penalty
+
+    game_logic.MAP_DATA = [
+        [3, 0],
+        [0, 0],
+    ]
+    high_archer = make_unit("Bowman2", "Enemy", 0, 0, 0, 0, [], char_class="Archer")  # elevation 3
+    target_below = make_unit("Andrew", "Player", 1, 0, 0, 0, [])  # elevation 0
+
+    assert game_logic.physical_hit_chance(high_archer, target_below) == game_logic.PHYSICAL_MAX_HIT_CHANCE
+
+
+def test_officer_aura_boosts_nearby_allies_hit_chance_only():
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
+    target = make_unit("Peter", "Player", 3, 3, 0, 0, [])
+    soldier = make_unit("Soldier1", "Enemy", 0, 0, 0, 0, [], char_class="Knight")
+    officer_nearby = make_unit("Officer1", "Enemy", 1, 0, 0, 0, [], char_class="Officer")
+    officer_far = make_unit("Officer2", "Enemy", 3, 0, 0, 0, [], char_class="Officer")
+    enemy_officer_ally_of_target = make_unit("EnemyOfficer", "Player", 0, 1, 0, 0, [], char_class="Officer")
+
+    no_aura = game_logic.physical_hit_chance(soldier, target, units_list=[soldier, target])
+    with_nearby_officer = game_logic.physical_hit_chance(soldier, target, units_list=[soldier, officer_nearby, target])
+    with_far_officer_only = game_logic.physical_hit_chance(soldier, target, units_list=[soldier, officer_far, target])
+    with_enemy_team_officer = game_logic.physical_hit_chance(
+        soldier, target, units_list=[soldier, enemy_officer_ally_of_target, target]
+    )
+
+    assert with_nearby_officer == no_aura + game_logic.OFFICER_AURA_HIT_BONUS
+    assert with_far_officer_only == no_aura  # out of command range, no bonus
+    assert with_enemy_team_officer == no_aura  # an Officer on the target's own team doesn't buff the attacker
+
+
+def test_prophet_preaches_with_a_faith_multiplier():
+    prophet = make_unit("Jesus", "Player", 0, 0, 40, 0, [], char_class="Prophet")
+    apostle = make_unit("Peter", "Player", 0, 1, 40, 0, [], char_class="Apostle")
+    target_a = make_unit("Enemy1", "Enemy", 0, 2, 50, 0, [])
+    target_b = make_unit("Enemy2", "Enemy", 0, 3, 50, 0, [])
+
+    game_logic.apply_preach(prophet, target_a)
+    game_logic.apply_preach(apostle, target_b)
+
+    prophet_gain = target_a.faith - 50
+    apostle_gain = target_b.faith - 50
+    assert prophet_gain == pytest.approx(apostle_gain * game_logic.CLASS_PREACH_MULTIPLIER["Prophet"])
+
+
+def test_sergeant_shove_pushes_farther_than_default():
+    game_logic.MAP_ROWS = 12
+    game_logic.MAP_COLS = 12
+    units_list = []
+    sergeant = make_unit("Sarge", "Enemy", 5, 5, 0, 0, ["Shove"], char_class="Sergeant")
+    knight = make_unit("Grunt", "Enemy", 5, 5, 0, 0, ["Shove"], char_class="Knight")
+    target_for_sergeant = make_unit("Peter", "Player", 6, 5, 0, 0, [])
+    target_for_knight = make_unit("Andrew", "Player", 6, 5, 0, 0, [])
+    units_list = [sergeant, target_for_sergeant]
+
+    random.seed(1)  # must succeed the 50% Shove chance roll
+    game_logic.apply_skill_status("Shove", sergeant, target_for_sergeant, units_list)
+    sergeant_push_distance = target_for_sergeant.x - 6
+
+    units_list2 = [knight, target_for_knight]
+    random.seed(1)
+    game_logic.apply_skill_status("Shove", knight, target_for_knight, units_list2)
+    knight_push_distance = target_for_knight.x - 6
+
+    assert sergeant_push_distance == game_logic.CLASS_SHOVE_DISTANCE["Sergeant"]
+    assert knight_push_distance == game_logic.SHOVE_DISTANCE
+    assert sergeant_push_distance > knight_push_distance
