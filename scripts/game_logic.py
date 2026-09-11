@@ -712,6 +712,7 @@ async def main(stage=None):
     selected_skill = None
     cursor_x, cursor_y = 0, 0
     valid_tiles = []
+    move_drag_start = None
     combat_log = "System Engine Initialized. Map loaded cleanly."
     rotation = 2
     map_zoom = 1.5
@@ -905,6 +906,29 @@ async def main(stage=None):
                 if hit_tile is not None:
                     cursor_x, cursor_y = hit_tile
 
+            elif (
+                event.type == pygame.MOUSEBUTTONUP
+                and event.button == 1
+                and game_state == "MOVE_SELECT"
+                and move_drag_start is not None
+            ):
+                # Completes a drag: mouse went down on the active unit (which
+                # armed movement, see the MENU-click handler below) and is
+                # now released over a different, valid tile. A plain click
+                # (release back on the same tile it started from) intentionally
+                # does nothing here, so click-then-click-elsewhere still works
+                # via the ordinary MOVE_SELECT tile click below.
+                hit_tile = screen_to_map(event.pos[0], event.pos[1], origin_x, origin_y, MAP_DATA, rotation, map_zoom)
+                if hit_tile is not None and hit_tile != move_drag_start and hit_tile in valid_tiles:
+                    active_unit.x, active_unit.y = hit_tile
+                    if step_sound:
+                        step_sound.play()
+                    active_unit.has_moved = True
+                    current_menu = get_action_menu(active_unit, units)
+                    menu_index = 0
+                    move_drag_start = None
+                    game_state = "MENU"
+
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 4:  # Mouse wheel up
                     stats_scroll = max(0, stats_scroll - 1)
@@ -924,6 +948,7 @@ async def main(stage=None):
                     valid_tiles = []
                     if game_state == "MOVE_SELECT":
                         current_menu = main_menu
+                        move_drag_start = None
                         game_state = "MENU"
                         combat_log = "Move canceled."
                     else:
@@ -948,6 +973,7 @@ async def main(stage=None):
                                     if game_state == "MENU":
                                         if choice == "Move" and not active_unit.has_moved and can_unit_move(active_unit, units):
                                             valid_tiles = get_valid_moves_a_star(active_unit, units)
+                                            move_drag_start = (active_unit.x, active_unit.y)
                                             game_state = "MOVE_SELECT"
                                         elif choice == "Act" and not active_unit.has_acted:
                                             current_menu = active_unit.skills + ["Wait"]
@@ -975,6 +1001,23 @@ async def main(stage=None):
                                 clicked_unit = find_unit_at_tile(units, *hit_tile)
                                 if clicked_unit:
                                     inspected_unit = clicked_unit
+                                    # Clicking the active unit directly (instead of
+                                    # opening the menu and choosing "Move") arms it
+                                    # for movement immediately - the player can then
+                                    # either click a destination tile separately, or
+                                    # keep the button held and drag straight there.
+                                    if (
+                                        game_state == "MENU"
+                                        and clicked_unit is active_unit
+                                        and clicked_unit.team == "Player"
+                                        and not active_unit.has_moved
+                                        and can_unit_move(active_unit, units)
+                                    ):
+                                        valid_tiles = get_valid_moves_a_star(active_unit, units)
+                                        move_drag_start = (active_unit.x, active_unit.y)
+                                        cursor_x, cursor_y = active_unit.x, active_unit.y
+                                        game_state = "MOVE_SELECT"
+                                        combat_log = f"{active_unit.name}: drag or click a highlighted tile to move."
 
                     # Tactical map clicks (tile selection)
                     elif game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
@@ -991,6 +1034,7 @@ async def main(stage=None):
                                 active_unit.has_moved = True
                                 current_menu = get_action_menu(active_unit, units)
                                 menu_index = 0
+                                move_drag_start = None
                                 game_state = "MENU"
                             elif game_state == "TARGET_SELECT" and hit_tile in valid_tiles:
                                 target_unit = next((u for u in units if u.x == cursor_x and u.y == cursor_y and u.is_alive()), None)
@@ -1107,14 +1151,15 @@ async def main(stage=None):
                             if game_state == "MENU":
                                 if choice == "Move" and not active_unit.has_moved and can_unit_move(active_unit, units):
                                     valid_tiles = get_valid_moves_a_star(active_unit, units)
+                                    move_drag_start = (active_unit.x, active_unit.y)
                                     game_state = "MOVE_SELECT"
                                 elif choice == "Act" and not active_unit.has_acted:
                                     current_menu = active_unit.skills + ["Wait"]
-                                menu_index = 0
-                                game_state = "SUBMENU_ACT"
-                            elif choice == "Wait":
-                                active_unit.ct = 0
-                                game_state = "TICKING"
+                                    menu_index = 0
+                                    game_state = "SUBMENU_ACT"
+                                elif choice == "Wait":
+                                    active_unit.ct = 0
+                                    game_state = "TICKING"
                         elif game_state == "SUBMENU_ACT":
                             if current_menu[menu_index] == "Wait":
                                 active_unit.ct = 0
@@ -1139,6 +1184,7 @@ async def main(stage=None):
                         valid_tiles = []
                         if game_state == "MOVE_SELECT":
                             current_menu = main_menu
+                            move_drag_start = None
                             game_state = "MENU"
                             combat_log = "Move canceled."
                         else:
@@ -1154,6 +1200,7 @@ async def main(stage=None):
                             active_unit.has_moved = True
                             current_menu = get_action_menu(active_unit, units)
                             menu_index = 0
+                            move_drag_start = None
                             game_state = "MENU"
                         elif game_state == "TARGET_SELECT" and (cursor_x, cursor_y) in valid_tiles:
                             target_unit = next((u for u in units if u.x == cursor_x and u.y == cursor_y and u.is_alive()), None)
