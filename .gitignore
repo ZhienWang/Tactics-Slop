@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 build/
 .pytest_cache/
+
+# PyInstaller desktop build output
+dist/
+dist_desktop/
+build_pyinstaller/
+itch_release/
+RoadToJerusalem-*.zip

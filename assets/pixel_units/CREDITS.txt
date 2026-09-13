@@ -1,0 +1,10 @@
+On-map unit pixel art (cleric.png, fighter.png, mage.png) is a single
+32x32 frame cropped from the "walking SE" animation of each class in:
+
+"Tiny Tactics - Battle Kit I" by Gabriel "tiopalada" Lima
+https://tiopalada.itch.io/tiny-tactics---battle-kit-i
+https://opengameart.org/content/tiny-tactics-battle-kit-i
+
+License: CC0 1.0 Universal (public domain dedication) -
+https://creativecommons.org/publicdomain/zero/1.0/
+No attribution required, but credited here as good practice.

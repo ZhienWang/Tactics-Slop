@@ -11,6 +11,7 @@ from scripts.data_editor import (
     load_skills_from_csv,
     load_items_from_csv,
     load_equipment_from_csv,
+    load_books_from_csv,
     load_terrain_from_csv,
     load_settings_from_csv,
     load_dialogues_from_csv,
@@ -21,6 +22,7 @@ from scripts.data_editor import (
     is_water_tile,
     TERRAIN_THEMES,
     STAGE_THEMES,
+    BOOK_SLOTS,
 )
 from scripts.config import (
     SCREEN_WIDTH,
@@ -37,9 +39,16 @@ from scripts.assets import (
     cache_terrain_images,
     cache_terrain_colors,
     build_character_portraits,
+    build_character_face_portraits,
+    build_character_chess_art,
+    build_character_pixel_art,
     draw_tile_texture,
     create_projectile_surface,
     bring_window_to_front,
+    load_nine_slice_frame,
+    draw_nine_slice_panel,
+    frame_content_rect,
+    get_font,
 )
 from scripts.controls import screen_to_map
 
@@ -50,8 +59,13 @@ MAP_COLS = 0
 SKILL_REGISTRY = {}
 ITEM_REGISTRY = {}
 EQUIPMENT_REGISTRY = {}
+BOOK_REGISTRY = {}
 CHARACTER_ROSTER = []
 TERRAIN_LAYOUT = []
+
+# A held book's stat gain per the holder's own turn is randomized around 2%
+# rather than fixed, since this is a first pass at the balance numbers.
+BOOK_STAT_GROWTH_RANGE = (0.015, 0.025)
 
 
 class Unit:
@@ -91,6 +105,14 @@ class Unit:
         # {slot: item_name or None}, set on the world map's Equipment screen
         # and applied once as a flat stat bonus when a battle begins.
         self.equipment = data.get("equipment") or {}
+        # Daily Devotion Books, chosen on the world map's Books screen:
+        # {slot: book_name or None}, {slot: turns_held}, and {slot: total
+        # stat already gained from that slot} - the latter two persist
+        # across battles (carried by the world map's roster) so a book's
+        # progress survives a fresh Unit being rebuilt at each battle start.
+        self.books = data.get("books") or {}
+        self.book_turns = data.get("book_turns") or {}
+        self.book_gain = data.get("book_gain") or {}
 
     def is_alive(self):
         return not self.removed
@@ -111,6 +133,42 @@ def apply_equipment_bonuses(unit, equipment_registry=None):
         for stat, amount in item["stats"].items():
             if hasattr(unit, stat):
                 setattr(unit, stat, getattr(unit, stat) + amount)
+
+
+def apply_book_bonuses(unit, book_registry=None):
+    """Re-applies whatever a unit's books have already grown, once, onto a
+    freshly-built Unit at battle start - mirrors apply_equipment_bonuses,
+    since book progress (book_gain) is carried on the world map's roster
+    but a battle always rebuilds Unit objects from base CSV stats."""
+    registry = book_registry if book_registry is not None else BOOK_REGISTRY
+    for slot, book_name in unit.books.items():
+        if not book_name:
+            continue
+        book = registry.get(book_name)
+        if not book or not hasattr(unit, book["stat"]):
+            continue
+        gain = unit.book_gain.get(slot, 0)
+        if gain:
+            setattr(unit, book["stat"], getattr(unit, book["stat"]) + gain)
+
+
+def apply_book_growth(unit, book_registry=None):
+    """Grows the stat tied to each equipped book by a small randomized
+    amount (around 2%) once per the unit's own turn, and advances that
+    slot's turns-held count its reading level is derived from."""
+    registry = book_registry if book_registry is not None else BOOK_REGISTRY
+    for slot in BOOK_SLOTS:
+        book_name = unit.books.get(slot)
+        if not book_name:
+            continue
+        book = registry.get(book_name)
+        if not book or not hasattr(unit, book["stat"]):
+            continue
+        stat = book["stat"]
+        unit.book_turns[slot] = unit.book_turns.get(slot, 0) + 1
+        gain = max(1, round(getattr(unit, stat) * random.uniform(*BOOK_STAT_GROWTH_RANGE)))
+        setattr(unit, stat, getattr(unit, stat) + gain)
+        unit.book_gain[slot] = unit.book_gain.get(slot, 0) + gain
 
 
 def unit_is_in_water(unit):
@@ -324,7 +382,7 @@ def draw_speech_bubble(surface, cx, cy, zoom=1.0):
     ]
     pygame.draw.polygon(surface, (250, 250, 245), tail)
     pygame.draw.polygon(surface, (40, 40, 40), tail, 1)
-    font = pygame.font.SysFont(None, max(10, round(18 * zoom)))
+    font = get_font(max(10, round(18 * zoom)))
     dots = font.render("...", True, (40, 40, 40))
     surface.blit(dots, dots.get_rect(center=bubble_rect.center))
 
@@ -333,7 +391,7 @@ def draw_faith_popup(surface, cx, cy, amount, elapsed, duration=FAITH_POPUP_MS):
     progress = max(0.0, min(1.0, elapsed / duration))
     rise = round(30 * progress)
     alpha = max(0, 255 - int(255 * progress))
-    font = pygame.font.SysFont(None, 24)
+    font = get_font(24)
     sign = "+" if amount >= 0 else ""
     text = font.render(f"{sign}{amount} Faith", True, (255, 215, 0))
     text.set_alpha(alpha)
@@ -385,6 +443,9 @@ def officer_aura_bonus(attacker, units_list):
     return 0.0
 
 
+MAGIC_DEFENSE_HIT_SCALE = 0.002
+
+
 def physical_hit_chance(attacker, target, units_list=None):
     """Attacking from higher ground is easier to land; attacking uphill is
     harder - elevation previously had no effect on combat at all beyond
@@ -392,14 +453,45 @@ def physical_hit_chance(attacker, target, units_list=None):
     Tactics, Tactics Ogre). Archers are trained to compensate for uphill
     shots and never suffer the elevation penalty (though they still enjoy
     the bonus of high ground). Soldiers/Sergeants fight with steadier aim,
-    and any Officer nearby further steadies their allies' hand."""
+    and any Officer nearby further steadies their allies' hand. The
+    target's Resist (their armor, per the equipment catalog's helmet/
+    breastplate/greaves flavor) makes them harder to hit in turn."""
     elevation_diff = tile_elevation(attacker.x, attacker.y) - tile_elevation(target.x, target.y)
     if attacker.char_class in CLASS_IGNORES_UPHILL_PENALTY:
         elevation_diff = max(0, elevation_diff)
     chance = PHYSICAL_BASE_HIT_CHANCE + elevation_diff * ELEVATION_HIT_BONUS_PER_TILE
     chance += CLASS_HIT_BONUS.get(attacker.char_class, 0.0)
     chance += officer_aura_bonus(attacker, units_list)
+    chance -= target.magic_defense * MAGIC_DEFENSE_HIT_SCALE
     return max(PHYSICAL_MIN_HIT_CHANCE, min(PHYSICAL_MAX_HIT_CHANCE, chance))
+
+
+MORALE_CHANCE_SCALE = 0.004
+MORALE_CHANCE_CAP = 0.3
+MORALE_FAITH_BONUS = 5
+MORALE_MV_BONUS = 1
+MORALE_JUMP_BONUS = 1
+MORALE_SPEED_BONUS = 5
+
+
+def morale_buff_chance(unit):
+    """Bravery's role: a chance, once per this unit's own turn, to catch a
+    surge of morale - capped well short of certainty so it stays a nice
+    bonus rather than something to build a whole strategy around."""
+    return min(MORALE_CHANCE_CAP, unit.bravery * MORALE_CHANCE_SCALE)
+
+
+def apply_morale_buff(unit):
+    """Rolls for Bravery's morale-buff chance; on a hit, permanently boosts
+    Faith, Move, Jump and Speed for the rest of the battle. Returns whether
+    it triggered."""
+    if random.random() >= morale_buff_chance(unit):
+        return False
+    unit.faith = min(FAITH_CAP, unit.faith + MORALE_FAITH_BONUS)
+    unit.mv += MORALE_MV_BONUS
+    unit.jump += MORALE_JUMP_BONUS
+    unit.speed += MORALE_SPEED_BONUS
+    return True
 
 
 def resolve_physical_hit(attacker, target, skill_name, units_list=None):
@@ -428,12 +520,27 @@ def skill_status_message(skill_name, caster, target):
     return f"{caster.name} snares {target.name} with Fish net for 2 turns!"
 
 
+PATIENCE_RESIST_SCALE = 0.004
+PATIENCE_RESIST_CAP = 0.6
+
+
+def status_resist_chance(target):
+    """A patient unit has a chance to simply shrug off a hostile status
+    effect (Snare, Stun) rather than suffer it - capped well short of
+    certainty so even a very patient unit can still be caught out."""
+    return min(PATIENCE_RESIST_CAP, target.patience * PATIENCE_RESIST_SCALE)
+
+
 def apply_skill_status(skill_name, caster, target, units_list):
     if skill_name == "Fish net":
+        if random.random() < status_resist_chance(target):
+            return False
         target.snared_turns = 2
         return True
     if skill_name == "Shove":
         if random.random() >= SHOVE_CHANCE:
+            return False
+        if random.random() < status_resist_chance(target):
             return False
         target.stunned_turns = 1
         push_unit_away(caster, target, units_list, tiles=CLASS_SHOVE_DISTANCE.get(caster.char_class, SHOVE_DISTANCE))
@@ -451,7 +558,12 @@ FAITH_TRANSFER_RATE = 0.2
 
 
 def apply_preach(preacher, target):
-    gain = preacher.faith * FAITH_TRANSFER_RATE * CLASS_PREACH_MULTIPLIER.get(preacher.char_class, 1.0)
+    # Magic Attack represents spiritual power/conviction, channeled here
+    # into stronger Preaching and Healing (both route through this
+    # function) rather than a separate damage stat, since this game has no
+    # damage-number combat to plug it into.
+    effective_faith = preacher.faith + preacher.magic_attack
+    gain = effective_faith * FAITH_TRANSFER_RATE * CLASS_PREACH_MULTIPLIER.get(preacher.char_class, 1.0)
     faith_before = target.faith
     target.faith = max(0, min(FAITH_CAP, target.faith + gain))
     actual_gain = target.faith - faith_before
@@ -494,7 +606,9 @@ def apply_item_effect(item_name, user, target, units_list=None):
     if effect == "revive":
         target.removed = False
         target.removed_at = None
-        target.faith = max(ANKH_MIN_REVIVE_FAITH, min(FAITH_CAP, round(user.faith * amount)))
+        # Love - compassion for others - adds straight onto the revived
+        # Faith, on top of the fraction of the user's own Faith.
+        target.faith = max(ANKH_MIN_REVIVE_FAITH, min(FAITH_CAP, round(user.faith * amount) + user.love))
         target.faith_popup = {"amount": round(target.faith), "start": now + PREACH_BUBBLE_MS}
         return f"{user.name} touches {target.name} with an Ankh - breath returns to them!"
 
@@ -507,11 +621,14 @@ def apply_item_effect(item_name, user, target, units_list=None):
     if effect == "buff_magic_attack":
         gain = round(user.magic_attack * amount)
         target.magic_attack += gain
-        return f"{user.name} offers Frankincense to {target.name}, sharpening their spirit! (+{gain} Magic Attack)"
+        return f"{user.name} offers Frankincense to {target.name}, sharpening their spirit! (+{gain} Speech)"
 
     if effect == "faith_boost":
         faith_before = target.faith
-        target.faith = max(0, min(FAITH_CAP, target.faith + amount))
+        # Love adds its own weight to a Mustard Seed's blessing on someone
+        # else, same idea as the Ankh revive bonus above.
+        love_bonus = user.love if target is not user else 0
+        target.faith = max(0, min(FAITH_CAP, target.faith + amount + love_bonus))
         actual_gain = target.faith - faith_before
         target.faith_popup = {"amount": round(actual_gain), "start": now + PREACH_BUBBLE_MS}
         return f"{user.name} plants a Mustard Seed of faith in {target.name} - it grows to {round(target.faith)}!"
@@ -519,18 +636,25 @@ def apply_item_effect(item_name, user, target, units_list=None):
     return f"{user.name} uses {item_name} on {target.name}."
 
 
-def draw_dialogue_window(surface, font, speaker, text):
-    window = pygame.Rect(80, SCREEN_HEIGHT - 190, SCREEN_WIDTH - 160, 120)
-    pygame.draw.rect(surface, (15, 15, 25), window)
-    pygame.draw.rect(surface, CURSOR_COLOR, window, 2)
-    surface.blit(font.render(speaker, True, CURSOR_COLOR), (window.x + 18, window.y + 14))
+def draw_dialogue_window(surface, font, speaker, text, frame=None):
+    width, height = 1200, 340
+    window = pygame.Rect(SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT - height - 40, width, height)
+    if frame:
+        draw_nine_slice_panel(surface, window, frame)
+        content = frame_content_rect(window, frame)
+    else:
+        pygame.draw.rect(surface, (15, 15, 25), window)
+        pygame.draw.rect(surface, CURSOR_COLOR, window, 2)
+        content = pygame.Rect(window.x + 18, window.y + 14, window.width - 36, window.height - 28)
+
+    surface.blit(font.render(speaker, True, CURSOR_COLOR), (content.x, content.y))
 
     words = text.split()
     lines = []
     line = ""
     for word in words:
         candidate = f"{line} {word}".strip()
-        if font.size(candidate)[0] <= window.width - 36:
+        if font.size(candidate)[0] <= content.width:
             line = candidate
         else:
             lines.append(line)
@@ -538,28 +662,39 @@ def draw_dialogue_window(surface, font, speaker, text):
     if line:
         lines.append(line)
     for line_index, line in enumerate(lines):
-        surface.blit(font.render(line, True, (240, 240, 240)), (window.x + 18, window.y + 46 + line_index * 22))
-    surface.blit(font.render("[Space / Enter] Continue", True, (160, 160, 160)), (window.right - 210, window.bottom - 25))
+        surface.blit(font.render(line, True, (240, 240, 240)), (content.x, content.y + 32 + line_index * 22))
+    surface.blit(font.render("[Space / Enter] Continue", True, (160, 160, 160)), (content.right - 210, content.bottom - 22))
 
 
-def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, portraits, team_inventory=None):
+def action_menu_layout(current_menu, frame=None):
+    """Shared by draw_action_menu and the mouse-click hit-test below it in
+    main() - both need the exact same panel/content geometry, or clicks
+    stop lining up with what's actually drawn."""
+    width = 300
+    # The box grows/shrinks with however many rows current_menu has (the
+    # root menu has 4 entries; skill/item submenus vary in length) - no
+    # portrait is shown here, so there's nothing else to reserve space for.
+    box_height = 110 + len(current_menu) * 26
+    mx, my = SCREEN_WIDTH - width - 20, 30
+    panel_rect = pygame.Rect(mx, my, width, box_height)
+    if frame:
+        content = frame_content_rect(panel_rect, frame)
+    else:
+        content = pygame.Rect(mx + 10, my + 10, width - 20, box_height - 20)
+    return panel_rect, content
+
+
+def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, team_inventory=None, frame=None):
     if not active_unit:
         return
-    mx, my = SCREEN_WIDTH - 220, 30
-    # The box (and where the portrait sits below the list) grows with however
-    # many rows current_menu has - the root menu grew from 3 to 4 entries
-    # once Item joined Move/Act/Wait, and skill/item submenus vary in length.
-    box_height = 129 + len(current_menu) * 26
-    pygame.draw.rect(surface, (20, 20, 30), (mx, my, 200, box_height))
-    pygame.draw.rect(surface, CURSOR_COLOR, (mx, my, 200, box_height), 2)
-    surface.blit(font.render(f"{active_unit.name} Actions", True, (255, 255, 255)), (mx + 10, my + 10))
-    portrait = portraits.get(active_unit.name)
-    if portrait:
-        portrait_y = my + 45 + len(current_menu) * 26 + 4
-        surface.blit(portrait, (mx + 10, portrait_y))
-        surface.blit(font.render(active_unit.name, True, (200, 200, 255)), (mx + 60, portrait_y + 6))
-        if active_unit.char_class:
-            surface.blit(font.render(active_unit.char_class, True, (180, 180, 255)), (mx + 60, portrait_y + 26))
+    panel_rect, content = action_menu_layout(current_menu, frame)
+    if frame:
+        draw_nine_slice_panel(surface, panel_rect, frame)
+    else:
+        pygame.draw.rect(surface, (20, 20, 30), panel_rect)
+        pygame.draw.rect(surface, CURSOR_COLOR, panel_rect, 2)
+
+    surface.blit(font.render(f"{active_unit.name} Actions", True, (255, 255, 255)), (content.x, content.y))
     for idx, opt in enumerate(current_menu):
         no_items_left = not any((team_inventory or {}).get(active_unit.team, {}).values())
         if ((opt == "Move" and (active_unit.has_moved or not can_unit_move(active_unit, units)))
@@ -569,13 +704,19 @@ def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units
         else:
             opt_color = CURSOR_COLOR if idx == menu_index else (170, 170, 170)
         pointer = " -> " if idx == menu_index else "    "
-        surface.blit(font.render(f"{pointer}{opt}", True, opt_color), (mx + 5, my + 45 + (idx * 26)))
+        surface.blit(font.render(f"{pointer}{opt}", True, opt_color), (content.x, content.y + 35 + (idx * 26)))
 
 
 def draw_unit_profile(surface, font, unit, portraits, bottom_right):
     if not unit:
         return
-    width, height = 260, 104
+    # Portrait is 2.5x the old 84x42 thumbnail; name/class/bars move to its
+    # right instead of stacking below, so the box grows wider, not taller.
+    margin = 10
+    portrait_w, portrait_h = 210, 105
+    stats_w = 200
+    width = margin + portrait_w + margin + stats_w + margin
+    height = portrait_h + margin * 2
     right, bottom = bottom_right
     px, py = right - width, bottom - height
 
@@ -584,17 +725,18 @@ def draw_unit_profile(surface, font, unit, portraits, bottom_right):
 
     portrait = portraits.get(unit.name)
     if portrait:
-        thumb = pygame.transform.smoothscale(portrait, (84, 42))
-        surface.blit(thumb, (px + 10, py + 10))
+        thumb = pygame.transform.smoothscale(portrait, (portrait_w, portrait_h))
+        surface.blit(thumb, (px + margin, py + margin))
 
+    stats_x = px + margin + portrait_w + margin
     name_color = (100, 180, 255) if unit.team == "Player" else (255, 110, 110)
-    surface.blit(font.render(unit.name, True, name_color), (px + 104, py + 10))
+    surface.blit(font.render(unit.name, True, name_color), (stats_x, py + 18))
     if unit.char_class:
-        surface.blit(font.render(unit.char_class, True, (180, 180, 180)), (px + 104, py + 30))
+        surface.blit(font.render(unit.char_class, True, (180, 180, 180)), (stats_x, py + 38))
 
-    bar_x, bar_w, bar_h = px + 10, width - 20, 16
+    bar_x, bar_w, bar_h = stats_x, stats_w, 16
 
-    faith_y = py + 56
+    faith_y = py + 62
     faith_pct = max(0, min(1, unit.faith / FAITH_CAP))
     pygame.draw.rect(surface, (60, 50, 10), (bar_x, faith_y, bar_w, bar_h))
     pygame.draw.rect(surface, (255, 215, 0), (bar_x, faith_y, int(bar_w * faith_pct), bar_h))
@@ -799,6 +941,16 @@ UNIT_CELL_FILL = 0.8
 # was added (140x70 at zoom 1).
 UNIT_SLOT_WIDTH = 140
 UNIT_SLOT_HEIGHT = 70
+# On-map unit art size, as a multiplier on top of the slot size above.
+# Set above 1.0 to make unit art bigger/more readable on a sparse map -
+# reverted to 1.0 (the original size) since 2.5x overlapped badly once units
+# clustered together on a crowded battlefield.
+UNIT_ART_SCALE = 1.0
+# Which art the on-map token uses: "pixel" (small FFT-style chibi pixel-art
+# sprites, by job class - see build_character_pixel_art), "chess" (classic
+# chess pieces, tried and reverted - too literal), or "icons" (each
+# character's own small sprite, the original look).
+UNIT_ART_STYLE = "pixel"
 
 
 def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, in_water=False, alpha=255):
@@ -806,8 +958,8 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
     if in_water:
         cy += round(6 * zoom)
 
-    cell_w = UNIT_SLOT_WIDTH * zoom * UNIT_CELL_FILL
-    cell_h = UNIT_SLOT_HEIGHT * zoom * UNIT_CELL_FILL
+    cell_w = UNIT_SLOT_WIDTH * zoom * UNIT_CELL_FILL * UNIT_ART_SCALE
+    cell_h = UNIT_SLOT_HEIGHT * zoom * UNIT_CELL_FILL * UNIT_ART_SCALE
 
     # Fading units (death animation) skip the tag/faith-bar/water-ripple
     # detail and just fade the portrait/silhouette out on its own - a dying
@@ -815,12 +967,17 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
     fading = alpha < 255
 
     if not fading:
-        font = pygame.font.SysFont(None, 14)
+        # These HUD overlays (team tag, mini faith sliver) sit right at the
+        # top of the unit's art, so their size/offset scale with
+        # UNIT_ART_SCALE too, or they'd end up buried inside a bigger token.
+        font = get_font(round(14 * UNIT_ART_SCALE))
         tag = "P" if unit.team == "Player" else "E"
-        surface.blit(font.render(tag, True, (255, 255, 255)), (cx - 4, cy - 5))
-        pygame.draw.rect(surface, (60, 50, 10), (cx - 15, cy - 22, 30, 4))
+        surface.blit(font.render(tag, True, (255, 255, 255)), (cx - round(4 * UNIT_ART_SCALE), cy - round(5 * UNIT_ART_SCALE)))
+        bar_w, bar_h = round(30 * UNIT_ART_SCALE), round(4 * UNIT_ART_SCALE)
+        bar_x, bar_y = cx - bar_w // 2, cy - round(22 * UNIT_ART_SCALE)
+        pygame.draw.rect(surface, (60, 50, 10), (bar_x, bar_y, bar_w, bar_h))
         faith_pct = max(0, min(1, unit.faith / FAITH_CAP))
-        pygame.draw.rect(surface, (255, 215, 0), (cx - 15, cy - 22, int(30 * faith_pct), 4))
+        pygame.draw.rect(surface, (255, 215, 0), (bar_x, bar_y, int(bar_w * faith_pct), bar_h))
 
     water_line = cy + round(10 * zoom)
     previous_clip = None
@@ -856,11 +1013,12 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
         pygame.draw.ellipse(surface, (150, 210, 240), (cx - ripple_w // 2, water_line - 4, ripple_w, 8), 2)
 
     if is_active and not fading:
-        pygame.draw.polygon(surface, (255, 60, 60), [(cx, cy - 28), (cx - 5, cy - 35), (cx + 5, cy - 35)])
+        marker_y = cy - round(cell_h / 2) - 8
+        pygame.draw.polygon(surface, (255, 60, 60), [(cx, marker_y), (cx - 5, marker_y - 7), (cx + 5, marker_y - 7)])
 
 
-async def main(stage=None, equipment_loadout=None):
-    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, EQUIPMENT_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
+async def main(stage=None, equipment_loadout=None, book_loadout=None):
+    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, EQUIPMENT_REGISTRY, BOOK_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     if stage is None:
@@ -877,6 +1035,7 @@ async def main(stage=None, equipment_loadout=None):
     SKILL_REGISTRY = load_skills_from_csv()
     ITEM_REGISTRY = load_items_from_csv()
     EQUIPMENT_REGISTRY = load_equipment_from_csv()
+    BOOK_REGISTRY = load_books_from_csv()
     CHARACTER_ROSTER = load_characters_from_csv(stage.get("characters") if stage else None)
     MAP_ROWS = len(MAP_DATA)
     MAP_COLS = len(MAP_DATA[0]) if MAP_DATA else 0
@@ -886,8 +1045,8 @@ async def main(stage=None, equipment_loadout=None):
     bring_window_to_front()
     pygame.display.set_caption(f"Tactics Engine: {stage['title']}" if stage else "Tactics Engine: Data Driven A* Pipeline")
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont(None, 22)
-    big_font = pygame.font.SysFont(None, 96)
+    font = get_font(22)
+    big_font = get_font(96)
     music_ready = False
     try:
         music_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bgmusic.ogg")
@@ -932,6 +1091,15 @@ async def main(stage=None, equipment_loadout=None):
             for unit in spawned:
                 unit.equipment = dict(equipment_loadout.get(unit.name, {}))
                 apply_equipment_bonuses(unit, EQUIPMENT_REGISTRY)
+        if book_loadout:
+            for unit in spawned:
+                progress = book_loadout.get(unit.name)
+                if not progress:
+                    continue
+                unit.books = dict(progress.get("books", {}))
+                unit.book_turns = dict(progress.get("turns", {}))
+                unit.book_gain = dict(progress.get("gain", {}))
+                apply_book_bonuses(unit, BOOK_REGISTRY)
         return spawned
 
     units = spawn_units()
@@ -939,10 +1107,21 @@ async def main(stage=None, equipment_loadout=None):
     team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
     dialogues = load_dialogues_from_csv(map_id=stage["node_id"] if stage else "jerusalem")
     portraits = build_character_portraits(units, invalid_assets)
+    # Higher-detail portraits for HUD panels (turn order, action menu, unit
+    # profile), independent of whatever art style the on-map token below
+    # uses.
+    face_portraits = build_character_face_portraits(units, invalid_assets)
+    if UNIT_ART_STYLE == "pixel":
+        map_art = build_character_pixel_art(units, invalid_assets)
+    elif UNIT_ART_STYLE == "chess":
+        map_art = build_character_chess_art(units, invalid_assets)
+    else:
+        map_art = portraits
 
     background_image = load_background_image(background_path, invalid_assets)
     terrain_image_cache = cache_terrain_images(TERRAIN_LAYOUT, invalid_assets)
     terrain_color_cache = cache_terrain_colors(terrain_image_cache)
+    ui_frame = load_nine_slice_frame(invalid_assets)
 
     game_state = "TICKING"
     active_unit = None
@@ -962,7 +1141,9 @@ async def main(stage=None, equipment_loadout=None):
     inspected_unit = None
     rotate_left_button = pygame.Rect(10, 205, 56, 32)
     rotate_right_button = pygame.Rect(76, 205, 56, 32)
-    restart_button = pygame.Rect(SCREEN_WIDTH // 2 - 60, SCREEN_HEIGHT // 2 + 40, 120, 40)
+    game_over_panel_rect = pygame.Rect(SCREEN_WIDTH // 2 - 450, SCREEN_HEIGHT // 2 - 250, 900, 500)
+    game_over_content = frame_content_rect(game_over_panel_rect, ui_frame) if ui_frame else game_over_panel_rect.inflate(-32, -32)
+    restart_button = pygame.Rect(game_over_content.centerx - 60, game_over_content.bottom - 60, 120, 40)
     stats_scroll = 0
     stats_panel_rect = pygame.Rect(10, 10, 280, 180)
     show_hud = True
@@ -1001,6 +1182,8 @@ async def main(stage=None, equipment_loadout=None):
                     continue
                 active_unit.has_moved = False
                 active_unit.has_acted = False
+                apply_book_growth(active_unit, BOOK_REGISTRY)
+                apply_morale_buff(active_unit)
                 snared_this_turn = active_unit.snared_turns > 0
                 if snared_this_turn:
                     active_unit.snared_turns -= 1
@@ -1212,10 +1395,9 @@ async def main(stage=None, equipment_loadout=None):
                     if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"]:
                         item_height = 26
                         mx, my = event.pos
-                        menu_x, menu_y = SCREEN_WIDTH - 220, 30
-                        menu_box_height = 129 + len(current_menu) * item_height
-                        if menu_x <= mx <= menu_x + 200 and menu_y <= my <= menu_y + menu_box_height:
-                            relative_y = my - (menu_y + 45)
+                        menu_panel_rect, menu_content = action_menu_layout(current_menu, ui_frame)
+                        if menu_panel_rect.collidepoint(event.pos):
+                            relative_y = my - (menu_content.y + 35)
                             if 0 <= relative_y < len(current_menu) * item_height:
                                 clicked_index = int(relative_y // item_height)
                                 if clicked_index < len(current_menu):
@@ -1624,7 +1806,7 @@ async def main(stage=None, equipment_loadout=None):
                 if u.x != x or u.y != y:
                     continue
                 if u.is_alive():
-                    draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=portraits, zoom=map_zoom, in_water=is_water_tile(terrain_path))
+                    draw_unit(screen, sx, sy, u, is_active=(u == active_unit), portraits=map_art, zoom=map_zoom, in_water=is_water_tile(terrain_path))
                     head_cy = sy + (TILE_HEIGHT // 2) - 12 + (round(6 * map_zoom) if is_water_tile(terrain_path) else 0)
                     now_ticks = pygame.time.get_ticks()
                     if u.converted_at is not None:
@@ -1648,7 +1830,7 @@ async def main(stage=None, equipment_loadout=None):
                     elapsed = pygame.time.get_ticks() - u.removed_at
                     if elapsed < DEATH_FADE_MS:
                         fade_alpha = max(0, 255 - int(255 * elapsed / DEATH_FADE_MS))
-                        draw_unit(screen, sx, sy, u, portraits=portraits, zoom=map_zoom, alpha=fade_alpha)
+                        draw_unit(screen, sx, sy, u, portraits=map_art, zoom=map_zoom, alpha=fade_alpha)
 
             if game_state in ["MOVE_SELECT", "TARGET_SELECT"] and x == cursor_x and y == cursor_y:
                 pygame.draw.polygon(screen, CURSOR_COLOR, top_pts, 3)
@@ -1662,7 +1844,7 @@ async def main(stage=None, equipment_loadout=None):
             screen.blit(proj, rect)
 
         if show_hud:
-            draw_turn_order_queue(screen, font, predict_turn_order(units), portraits, 320, 10)
+            draw_turn_order_queue(screen, font, predict_turn_order(units), face_portraits, 320, 10)
 
             # HUD
             pygame.draw.rect(screen, (40, 40, 50), (10, 10, 280, 180))
@@ -1702,10 +1884,10 @@ async def main(stage=None, equipment_loadout=None):
                     screen.blit(font.render(f"{reason}: {os.path.basename(path)}", True, (255, 180, 120)), (25, panel_rect.y + 56 + idx * 16))
             screen.set_clip(previous_clip)
 
-            draw_unit_profile(screen, font, inspected_unit, portraits, (SCREEN_WIDTH - 10, panel_rect.y - 10))
+            draw_unit_profile(screen, font, inspected_unit, face_portraits, (SCREEN_WIDTH - 10, panel_rect.y - 10))
 
         if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"] and active_unit:
-            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, portraits, team_inventory)
+            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, team_inventory, ui_frame)
 
         if game_state == "GAME_OVER":
             is_victory = winner == "Player"
@@ -1721,12 +1903,18 @@ async def main(stage=None, equipment_loadout=None):
             overlay.fill((0, 0, 0, 190))
             screen.blit(overlay, (0, 0))
 
+            if ui_frame:
+                draw_nine_slice_panel(screen, game_over_panel_rect, ui_frame)
+            else:
+                pygame.draw.rect(screen, (15, 15, 25), game_over_panel_rect)
+                pygame.draw.rect(screen, theme_color, game_over_panel_rect, 3)
+
             title_surf = big_font.render(title_text, True, theme_color)
-            screen.blit(title_surf, title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 90)))
+            screen.blit(title_surf, title_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 80)))
             subtitle_surf = font.render(subtitle_text, True, (230, 230, 230))
-            screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 25)))
+            screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 160)))
             log_surf = font.render(combat_log, True, (190, 190, 190))
-            screen.blit(log_surf, log_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 5)))
+            screen.blit(log_surf, log_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 195)))
 
             pygame.draw.rect(screen, theme_color, restart_button)
             pygame.draw.rect(screen, (255, 255, 255), restart_button, 2)
@@ -1739,11 +1927,24 @@ async def main(stage=None, equipment_loadout=None):
             overlay.fill((0, 0, 0, 120))
             screen.blit(overlay, (0, 0))
             speaker, text = dialogue_lines[dialogue_index]
-            draw_dialogue_window(screen, font, speaker, text)
+            draw_dialogue_window(screen, font, speaker, text, ui_frame)
 
         pygame.display.flip()
         clock.tick(60)
         await asyncio.sleep(0)
+
+    # Book progress (turns held, reading level, accrued stat gain) is the
+    # one piece of battle state that should survive back onto the world
+    # map's persistent roster - equipment doesn't need this since it never
+    # changes mid-battle.
+    return {
+        unit.name: {
+            "books": dict(unit.books),
+            "turns": dict(unit.book_turns),
+            "gain": dict(unit.book_gain),
+        }
+        for unit in units
+    }
 
 
 if __name__ == '__main__':

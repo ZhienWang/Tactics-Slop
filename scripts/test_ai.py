@@ -141,6 +141,7 @@ def test_fish_net_targets_enemies_and_prevents_movement():
     peter = make_unit("Peter", "Player", 1, 1, 0, 0, ["Fish net"])
     ally = make_unit("Andrew", "Player", 1, 2, 0, 0, [])
     enemy = make_unit("Judas", "Enemy", 2, 1, 0, 0, [])
+    enemy.patience = 0  # isolate this test from Patience's status-resist chance
 
     targets = game_logic.get_skill_targets(peter, "Fish net", [peter, ally, enemy])
     assert (2, 1) in targets
@@ -259,6 +260,7 @@ def test_physical_hit_chance_is_base_rate_on_flat_ground():
     game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
     attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
     target = make_unit("Peter", "Player", 0, 1, 0, 0, [])
+    target.magic_defense = 0  # isolate from Resist's hit-chance reduction
 
     assert game_logic.physical_hit_chance(attacker, target) == game_logic.PHYSICAL_BASE_HIT_CHANCE
 
@@ -273,6 +275,7 @@ def test_physical_hit_chance_favors_attacking_from_higher_ground():
     high_ground_attacker = make_unit("Archer", "Enemy", 0, 0, 0, 0, [])  # elevation 1
     low_ground_attacker = make_unit("Archer2", "Enemy", 1, 0, 0, 0, [])  # elevation 0
     target = make_unit("Peter", "Player", 2, 0, 0, 0, [])  # elevation 0
+    target.magic_defense = 0  # isolate from Resist's hit-chance reduction
 
     high_chance = game_logic.physical_hit_chance(high_ground_attacker, target)
     low_chance = game_logic.physical_hit_chance(low_ground_attacker, target)
@@ -294,6 +297,105 @@ def test_physical_hit_chance_is_clamped_to_sane_bounds():
 
     assert game_logic.physical_hit_chance(attacker_way_above, target_below) == game_logic.PHYSICAL_MAX_HIT_CHANCE
     assert game_logic.physical_hit_chance(attacker_way_below, target_above) == game_logic.PHYSICAL_MIN_HIT_CHANCE
+
+
+def test_physical_hit_chance_is_reduced_by_the_targets_magic_defense():
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
+    attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
+    armored_target = make_unit("Armored", "Player", 1, 0, 0, 0, [])
+    bare_target = make_unit("Bare", "Player", 2, 0, 0, 0, [])
+    armored_target.magic_defense = 80
+    bare_target.magic_defense = 5
+
+    assert game_logic.physical_hit_chance(attacker, armored_target) < game_logic.physical_hit_chance(attacker, bare_target)
+
+
+# --- morale_buff_chance / apply_morale_buff (Bravery's morale-buff proc) ---
+
+def test_morale_buff_chance_grows_with_bravery_and_is_capped():
+    timid = make_unit("Timid", "Player", 0, 0, 0, 0, [])
+    brave = make_unit("Brave", "Player", 0, 0, 0, 0, [])
+    timid.bravery = 0
+    brave.bravery = 1000  # absurdly high - should still clamp, never guarantee a proc
+
+    assert game_logic.morale_buff_chance(timid) == 0
+    assert game_logic.morale_buff_chance(brave) == game_logic.MORALE_CHANCE_CAP
+
+
+def test_apply_morale_buff_boosts_faith_move_jump_and_speed_on_a_proc(monkeypatch):
+    unit = make_unit("Peter", "Player", 0, 0, 100, 0, [])
+    unit.bravery = 50
+    unit.mv = 3
+    unit.jump = 1
+    unit.speed = 10
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)  # always procs
+
+    triggered = game_logic.apply_morale_buff(unit)
+
+    assert triggered is True
+    assert unit.faith == 100 + game_logic.MORALE_FAITH_BONUS
+    assert unit.mv == 3 + game_logic.MORALE_MV_BONUS
+    assert unit.jump == 1 + game_logic.MORALE_JUMP_BONUS
+    assert unit.speed == 10 + game_logic.MORALE_SPEED_BONUS
+
+
+def test_apply_morale_buff_does_nothing_when_the_roll_fails(monkeypatch):
+    unit = make_unit("Peter", "Player", 0, 0, 100, 0, [])
+    unit.bravery = 50
+    unit.mv = 3
+    unit.jump = 1
+    unit.speed = 10
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.99)  # never procs
+
+    triggered = game_logic.apply_morale_buff(unit)
+
+    assert triggered is False
+    assert unit.faith == 100
+    assert unit.mv == 3
+    assert unit.jump == 1
+    assert unit.speed == 10
+
+
+def test_apply_morale_buff_faith_gain_is_capped_at_faith_cap(monkeypatch):
+    unit = make_unit("Peter", "Player", 0, 0, game_logic.FAITH_CAP - 2, 0, [])
+    unit.bravery = 50
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)  # always procs
+
+    game_logic.apply_morale_buff(unit)
+
+    assert unit.faith == game_logic.FAITH_CAP
+
+
+# --- status_resist_chance / apply_skill_status (Patience resisting Snare/Stun) ---
+
+def test_status_resist_chance_grows_with_patience_and_is_capped():
+    low = make_unit("Low", "Player", 0, 0, 0, 0, [])
+    high = make_unit("High", "Player", 0, 0, 0, 0, [])
+    low.patience = 0
+    high.patience = 1000  # absurdly high - should still clamp, never guarantee immunity
+
+    assert game_logic.status_resist_chance(low) == 0
+    assert game_logic.status_resist_chance(high) == game_logic.PATIENCE_RESIST_CAP
+
+
+def test_apply_skill_status_fish_net_snares_when_patience_roll_fails(monkeypatch):
+    caster = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    target = make_unit("Legionnaire", "Enemy", 0, 1, 0, 0, [])
+    target.patience = 50
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.99)  # never resists
+
+    assert game_logic.apply_skill_status("Fish net", caster, target, []) is True
+    assert target.snared_turns == 2
+
+
+def test_apply_skill_status_fish_net_is_resisted_when_patience_roll_succeeds(monkeypatch):
+    caster = make_unit("Peter", "Player", 0, 0, 0, 0, [])
+    target = make_unit("Legionnaire", "Enemy", 0, 1, 0, 0, [])
+    target.patience = 50
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)  # always resists
+
+    assert game_logic.apply_skill_status("Fish net", caster, target, []) is False
+    assert target.snared_turns == 0
 
 
 def test_choose_ai_action_targets_ally_with_support_skill():
@@ -418,8 +520,24 @@ def test_apply_preach_gain_scales_with_preacher_faith():
     game_logic.apply_preach(strong_preacher, target_b)
 
     assert target_b.faith > target_a.faith
-    assert target_a.faith == pytest.approx(weak_preacher.faith * game_logic.FAITH_TRANSFER_RATE)
-    assert target_b.faith == pytest.approx(strong_preacher.faith * game_logic.FAITH_TRANSFER_RATE)
+    # make_unit doesn't set magic_attack, so both preachers carry the Unit
+    # default (25) - it adds directly onto faith in the transfer formula.
+    assert target_a.faith == pytest.approx((weak_preacher.faith + weak_preacher.magic_attack) * game_logic.FAITH_TRANSFER_RATE)
+    assert target_b.faith == pytest.approx((strong_preacher.faith + strong_preacher.magic_attack) * game_logic.FAITH_TRANSFER_RATE)
+
+
+def test_apply_preach_gain_also_scales_with_preachers_magic_attack():
+    preacher = make_unit("Preacher", "Player", 0, 0, 100, 0, [])
+    weaker_preacher = make_unit("Weaker", "Player", 0, 0, 100, 0, [])
+    preacher.magic_attack = 50
+    weaker_preacher.magic_attack = 0
+    target = make_unit("Target", "Enemy", 0, 1, 0, 0, [])
+    weaker_target = make_unit("Weaker Target", "Enemy", 0, 1, 0, 0, [])
+
+    game_logic.apply_preach(preacher, target)
+    game_logic.apply_preach(weaker_preacher, weaker_target)
+
+    assert target.faith > weaker_target.faith
 
 
 # --- Data integrity: every character skill must exist in skills.csv ---
@@ -522,6 +640,7 @@ def test_archer_ignores_uphill_penalty_but_keeps_downhill_bonus():
     archer = make_unit("Bowman", "Enemy", 0, 0, 0, 0, [], char_class="Archer")  # elevation 0
     knight = make_unit("Grunt", "Enemy", 0, 0, 0, 0, [], char_class="Knight")  # elevation 0
     target_above = make_unit("Peter", "Player", 1, 0, 0, 0, [])  # elevation 3, uphill shot
+    target_above.magic_defense = 0  # isolate from Resist's hit-chance reduction
 
     archer_chance = game_logic.physical_hit_chance(archer, target_above)
     knight_chance = game_logic.physical_hit_chance(knight, target_above)
@@ -679,19 +798,34 @@ def test_apply_item_effect_ankh_revives_scaled_by_users_faith():
 
     assert fallen_ally.is_alive()
     assert fallen_ally.removed_at is None
-    assert fallen_ally.faith == round(60 * 0.5)
+    # make_unit doesn't set love, so it carries the Unit default (25) - Love
+    # adds straight onto the revived Faith, on top of the Faith fraction.
+    assert fallen_ally.faith == round(60 * 0.5) + user.love
     assert "Ankh" in message
 
 
 def test_apply_item_effect_ankh_revive_floors_at_minimum_faith():
     set_item_registry()
     weak_user = make_unit("Peter", "Player", 0, 0, 5, 0, [])  # 5 * 0.5 = 2.5, below the floor
+    weak_user.love = 0  # isolate the floor behavior from Love's bonus
     fallen_ally = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
     fallen_ally.removed = True
 
     game_logic.apply_item_effect("Ankh", weak_user, fallen_ally)
 
     assert fallen_ally.faith == game_logic.ANKH_MIN_REVIVE_FAITH
+
+
+def test_apply_item_effect_ankh_revive_boosted_by_users_love():
+    set_item_registry()
+    user = make_unit("Peter", "Player", 0, 0, 60, 0, [])
+    user.love = 40
+    fallen_ally = make_unit("Andrew", "Player", 0, 1, 0, 0, [])
+    fallen_ally.removed = True
+
+    game_logic.apply_item_effect("Ankh", user, fallen_ally)
+
+    assert fallen_ally.faith == round(60 * 0.5) + 40
 
 
 def test_apply_item_effect_myrrh_fully_restores_mp():

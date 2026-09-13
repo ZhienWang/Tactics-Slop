@@ -285,6 +285,46 @@ def equipment_by_slot(equipment_registry):
     return grouped
 
 
+# Daily Devotion Books: a PoE2-gem-socket-style system where each disciple
+# carries up to 5 books into battle. Unlike equipment slots, every book slot
+# is generic - any book from the catalog can go in any of the 5 slots.
+BOOK_SLOTS = ["book_1", "book_2", "book_3", "book_4", "book_5"]
+
+# How many of a unit's own battle turns a book must be held for before its
+# reading level advances - checked highest-threshold-first.
+READING_LEVEL_THRESHOLDS = [
+    (30, "Mastered"),
+    (20, "Devoted"),
+    (10, "Learned"),
+    (0, "Novice"),
+]
+
+
+def reading_level(turns_held):
+    """The disciple's familiarity with a held book, based on how many of
+    their own battle turns they've carried it - mirrors a PoE2 gem's
+    level-up-by-use progression."""
+    for threshold, label in READING_LEVEL_THRESHOLDS:
+        if turns_held >= threshold:
+            return label
+    return "Novice"
+
+
+def load_books_from_csv(filepath=None):
+    """Parses the Daily Devotion Book catalog into a dict keyed by book
+    name, each naming the stat it nurtures in whoever carries it."""
+    books_registry = {}
+    filepath = filepath or os.path.join(DATA_DIR, "books.csv")
+    with open(filepath, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            books_registry[row["book_name"]] = {
+                "stat": row["stat"],
+                "description": row.get("description", ""),
+            }
+    return books_registry
+
+
 def load_terrain_from_csv(filepath=None):
     """Parses terrain tile image paths from a CSV grid."""
     terrain_grid = []
@@ -304,6 +344,94 @@ def load_terrain_from_text(terrain_text):
         for row in csv.reader(io.StringIO(terrain_text))
         if row
     ]
+
+
+def load_map_layers_csv(filepath=None):
+    """Parses the sparse "one row per physical tile" map format the map
+    editor works in: {x, y, z, terrain}. Unlike map_layout.csv/
+    terrain_layout.csv (one height + one texture per cell, always), a
+    column (x, y) can hold zero tiles (a hole) or several (a bridge/
+    platform floating above a gap). Missing file just means "no
+    editor-authored layers yet" - returns an empty list rather than
+    raising, matching load_stage_manifest's tolerance."""
+    filepath = filepath or os.path.join(DATA_DIR, "map_layers.csv")
+    if not os.path.exists(filepath):
+        return []
+    tiles = []
+    with open(filepath, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            tiles.append({
+                "x": int(row["x"]),
+                "y": int(row["y"]),
+                "z": int(row["z"]),
+                "terrain": row["terrain"].strip(),
+            })
+    return tiles
+
+
+def save_map_layers_csv(filepath, tiles):
+    """Writes the sparse tile list back out, sorted by (y, x, z) so repeat
+    saves of an unchanged map produce a stable diff."""
+    ordered = sorted(tiles, key=lambda t: (t["y"], t["x"], t["z"]))
+    with open(filepath, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["x", "y", "z", "terrain"])
+        for tile in ordered:
+            writer.writerow([tile["x"], tile["y"], tile["z"], tile["terrain"]])
+
+
+def dense_grids_to_tiles(map_grid, terrain_grid):
+    """Converts an existing stage's loaded MAP_DATA + TERRAIN_LAYOUT (one
+    height/texture per cell, always) into the sparse tile-list format - one
+    tile per cell, a straight 1:1 conversion. This is how the editor loads
+    an existing single-layer stage to continue editing it."""
+    tiles = []
+    for y, row in enumerate(map_grid):
+        for x, height in enumerate(row):
+            terrain = terrain_grid[y][x] if y < len(terrain_grid) and x < len(terrain_grid[y]) else ""
+            tiles.append({"x": x, "y": y, "z": height, "terrain": terrain})
+    return tiles
+
+
+def tiles_to_dense_grids(tiles, rows, cols):
+    """Converts sparse tiles back to the legacy dense grids the live game
+    engine reads, but only if every (x, y) in the rows x cols rectangle has
+    exactly one tile - no holes, no bridges. Returns None otherwise (the
+    caller should fall back to saving map_layers.csv only)."""
+    by_column = {}
+    for tile in tiles:
+        by_column.setdefault((tile["x"], tile["y"]), []).append(tile)
+
+    map_grid = [[0] * cols for _ in range(rows)]
+    terrain_grid = [[""] * cols for _ in range(rows)]
+    for y in range(rows):
+        for x in range(cols):
+            column = by_column.get((x, y), [])
+            if len(column) != 1:
+                return None
+            map_grid[y][x] = column[0]["z"]
+            terrain_grid[y][x] = column[0]["terrain"]
+    return map_grid, terrain_grid
+
+
+def save_map_layout_csv(filepath, map_grid):
+    """Writes a dense height grid in the same format load_map_from_csv
+    reads - previously only ever read (maps were hand-authored or
+    generated in-memory), never written by the game itself."""
+    with open(filepath, "w", newline="") as f:
+        writer = csv.writer(f)
+        for row in map_grid:
+            writer.writerow(row)
+
+
+def save_terrain_layout_csv(filepath, terrain_grid):
+    """Writes a dense terrain-texture grid in the same format
+    load_terrain_from_csv reads."""
+    with open(filepath, "w", newline="") as f:
+        writer = csv.writer(f)
+        for row in terrain_grid:
+            writer.writerow(row)
 
 
 def load_settings_from_csv(filepath=None):
@@ -405,6 +533,30 @@ def load_characters_from_csv(filepath=None):
                 char_data[attribute] = int(row[attribute])
             character_list.append(char_data)
     return character_list
+
+
+def update_character_positions_csv(filepath, positions):
+    """Rewrites only the x/y columns of a characters.csv for names present
+    in `positions` ({name: (x, y)}), leaving every other column (skills,
+    stats, portrait_path, ...) and the column order untouched. Reads/writes
+    raw string rows rather than round-tripping through
+    load_characters_from_csv's typed representation, so nothing gets
+    reformatted along the way."""
+    with open(filepath, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+
+    for row in rows:
+        if row["name"] in positions:
+            x, y = positions[row["name"]]
+            row["x"] = str(x)
+            row["y"] = str(y)
+
+    with open(filepath, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 # --- TEST EXECUTOR ---

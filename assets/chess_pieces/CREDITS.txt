@@ -1,0 +1,13 @@
+Chess piece artwork (king/queen/rook/bishop/knight/pawn, light and dark)
+originally created by Wikimedia Commons user Cburnett, from the
+"SVG chess pieces" set:
+https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces
+
+Rasterized from the original SVGs (Chess_*45.svg) to 256x256 PNGs with a
+transparent background for use as this game's on-map unit art.
+
+License: released under the user's choice of Creative Commons
+Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0), the GNU Free
+Documentation License (GFDL), the 3-clause BSD License, or the GNU General
+Public License (GPL) - see https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces
+for the full multi-license text. Used here under the BSD/CC-BY-SA terms.

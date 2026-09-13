@@ -20,9 +20,21 @@ from scripts.data_editor import (
     equipment_by_slot,
     EQUIPMENT_SLOTS,
     UNIT_EQUIPMENT_SLOTS,
+    load_books_from_csv,
+    reading_level,
+    BOOK_SLOTS,
     TERRAIN_THEMES,
     STAGE_THEMES,
     TERRAIN_TILE_WEIGHTS,
+    load_map_from_csv,
+    load_terrain_from_csv,
+    load_map_layers_csv,
+    save_map_layers_csv,
+    dense_grids_to_tiles,
+    tiles_to_dense_grids,
+    save_map_layout_csv,
+    save_terrain_layout_csv,
+    update_character_positions_csv,
 )
 from scripts.config import FAITH_CAP
 
@@ -307,3 +319,139 @@ def test_ring_slots_share_a_single_catalog_category():
     equipment = load_equipment_from_csv()
     grouped = equipment_by_slot(equipment)
     assert grouped["ring"], "the shared 'ring' category should have items for both ring slots to draw from"
+
+
+# --- books.csv (Daily Devotion Book catalog for the world map's Books screen) ---
+
+VALID_BOOK_STATS = {"magic_attack", "magic_defense", "faith", "bravery", "patience", "love"}
+EXPECTED_BOOK_COUNT = 66  # the full Protestant canon, one book per catalog row
+
+
+def test_books_csv_has_one_row_per_book_of_the_bible():
+    books = load_books_from_csv()
+    assert len(books) == EXPECTED_BOOK_COUNT
+
+
+def test_books_only_use_known_stats_and_have_descriptions():
+    books = load_books_from_csv()
+    for name, data in books.items():
+        assert data["stat"] in VALID_BOOK_STATS, f"{name} names an unrecognized stat: {data['stat']}"
+        assert data["description"].strip(), f"{name} has no description"
+
+
+def test_every_growable_stat_has_at_least_one_book():
+    books = load_books_from_csv()
+    stats_covered = {data["stat"] for data in books.values()}
+    assert stats_covered == VALID_BOOK_STATS
+
+
+def test_five_book_slots_are_all_distinct():
+    assert len(BOOK_SLOTS) == 5
+    assert len(set(BOOK_SLOTS)) == 5
+
+
+def test_reading_level_is_novice_below_ten_turns_and_mastered_at_thirty():
+    assert reading_level(0) == "Novice"
+    assert reading_level(29) == "Devoted"
+    assert reading_level(30) == "Mastered"
+
+
+# --- map_layers.csv (the map editor's sparse, bridge-capable tile format) ---
+
+REAL_STAGE_MAP_DIRS = [os.path.dirname(p) for p in glob.glob(os.path.join(DATA_DIR, "stages", "*", "map_layout.csv"))]
+
+
+@pytest.mark.parametrize("stage_dir", REAL_STAGE_MAP_DIRS)
+def test_dense_grids_round_trip_through_the_sparse_tile_format(stage_dir):
+    map_grid = load_map_from_csv(os.path.join(stage_dir, "map_layout.csv"))
+    terrain_grid = load_terrain_from_csv(os.path.join(stage_dir, "terrain_layout.csv"))
+    rows, cols = len(map_grid), len(map_grid[0])
+
+    tiles = dense_grids_to_tiles(map_grid, terrain_grid)
+    assert len(tiles) == rows * cols  # every real stage today is single-layer, dense
+
+    result = tiles_to_dense_grids(tiles, rows, cols)
+    assert result is not None, f"{stage_dir} failed to round-trip back to a dense grid"
+    map_grid2, terrain_grid2 = result
+    assert map_grid2 == map_grid
+    assert terrain_grid2 == terrain_grid
+
+
+def test_tiles_to_dense_grids_rejects_a_hole():
+    tiles = [{"x": x, "y": y, "z": 0, "terrain": "assets/grass.jpg"} for x in range(3) for y in range(3)]
+    tiles = [t for t in tiles if not (t["x"] == 1 and t["y"] == 1)]  # punch a hole in the middle
+
+    assert tiles_to_dense_grids(tiles, 3, 3) is None
+
+
+def test_tiles_to_dense_grids_rejects_a_bridge():
+    tiles = [{"x": x, "y": y, "z": 0, "terrain": "assets/grass.jpg"} for x in range(3) for y in range(3)]
+    tiles.append({"x": 1, "y": 1, "z": 4, "terrain": "assets/wood.png"})  # a second, floating tile
+
+    assert tiles_to_dense_grids(tiles, 3, 3) is None
+
+
+def test_tiles_to_dense_grids_accepts_a_fully_populated_single_layer_map():
+    tiles = [{"x": x, "y": y, "z": x + y, "terrain": "assets/grass.jpg"} for x in range(3) for y in range(3)]
+
+    result = tiles_to_dense_grids(tiles, 3, 3)
+
+    assert result is not None
+    map_grid, terrain_grid = result
+    assert map_grid[1][2] == 2 + 1  # map_grid[y][x] == z for that tile
+    assert terrain_grid[0][0] == "assets/grass.jpg"
+
+
+def test_map_layers_csv_round_trips_a_bridge(tmp_path):
+    tiles = [
+        {"x": 0, "y": 0, "z": 0, "terrain": "assets/grass.jpg"},
+        {"x": 0, "y": 0, "z": 3, "terrain": "assets/wood.png"},  # a bridge over the ground tile
+        {"x": 1, "y": 0, "z": 1, "terrain": "assets/stone.png"},
+    ]
+    path = tmp_path / "map_layers.csv"
+
+    save_map_layers_csv(str(path), tiles)
+    loaded = load_map_layers_csv(str(path))
+
+    key = lambda t: (t["y"], t["x"], t["z"])
+    assert sorted(loaded, key=key) == sorted(tiles, key=key)
+
+
+def test_load_map_layers_csv_returns_empty_list_when_file_is_missing(tmp_path):
+    assert load_map_layers_csv(str(tmp_path / "does_not_exist.csv")) == []
+
+
+def test_save_map_layout_and_terrain_csv_are_readable_by_the_normal_loaders(tmp_path):
+    map_grid = [[0, 1], [2, 3]]
+    terrain_grid = [["assets/grass.jpg", "assets/sand.png"], ["assets/stone.png", "assets/water.png"]]
+    map_path = tmp_path / "map_layout.csv"
+    terrain_path = tmp_path / "terrain_layout.csv"
+
+    save_map_layout_csv(str(map_path), map_grid)
+    save_terrain_layout_csv(str(terrain_path), terrain_grid)
+
+    assert load_map_from_csv(str(map_path)) == map_grid
+    assert load_terrain_from_csv(str(terrain_path)) == terrain_grid
+
+
+def test_update_character_positions_csv_only_touches_x_and_y(tmp_path):
+    path = tmp_path / "characters.csv"
+    path.write_text(
+        "name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,"
+        "magic_attack,magic_defense,faith,bravery,patience,love\n"
+        "Jesus,Player,Prophet,1,1,15,4,2,100,Preach|Heal,255,200,0,assets/jesus.png,25,6,129,24,3,20\n"
+        "Peter,Player,Apostle,0,0,12,3,1,20,Preach|Fish net,50,120,240,assets/peter.png,10,28,122,6,32,25\n",
+        encoding="utf-8",
+    )
+
+    update_character_positions_csv(str(path), {"Jesus": (5, 6)})
+    rows = load_characters_from_csv(str(path))
+
+    jesus = next(r for r in rows if r["name"] == "Jesus")
+    peter = next(r for r in rows if r["name"] == "Peter")
+    assert (jesus["x"], jesus["y"]) == (5, 6)
+    assert (peter["x"], peter["y"]) == (0, 0)  # untouched - wasn't in the positions dict
+    # Every other column survives the round trip unchanged.
+    assert jesus["skills"] == ["Preach", "Heal"]
+    assert jesus["magic_attack"] == 25
+    assert jesus["portrait_path"] == "assets/jesus.png"
