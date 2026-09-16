@@ -946,11 +946,11 @@ UNIT_SLOT_HEIGHT = 70
 # reverted to 1.0 (the original size) since 2.5x overlapped badly once units
 # clustered together on a crowded battlefield.
 UNIT_ART_SCALE = 1.0
-# Which art the on-map token uses: "pixel" (small FFT-style chibi pixel-art
-# sprites, by job class - see build_character_pixel_art), "chess" (classic
-# chess pieces, tried and reverted - too literal), or "icons" (each
-# character's own small sprite, the original look).
-UNIT_ART_STYLE = "pixel"
+# Which art the on-map token uses: "icons" (each character's own original
+# small sprite - the current choice), "pixel" (small FFT-style chibi
+# pixel-art sprites by job class, tried and reverted) or "chess" (classic
+# chess pieces, tried and reverted - too literal).
+UNIT_ART_STYLE = "icons"
 
 
 def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, in_water=False, alpha=255):
