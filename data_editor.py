@@ -39,7 +39,7 @@ GAME_SETTINGS_CSV_DUMMY = """setting_name,value
 background_path,"""
 
 DIALOGUES_CSV_DUMMY = """character,turn,text
-Jesus,1,"Welcome, friends. Our journey begins here."""
+Paul,1,"Welcome, friends. Our journey begins here."""
 
 TERRAIN_TILE_PATHS = [
     "C:\\Users\\zhien\\Desktop\\Projects\\Games\\assets\\grass.jpg",

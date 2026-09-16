@@ -107,14 +107,14 @@ def test_generate_map_csv_values_stay_within_height_range():
 
 
 def test_generate_map_csv_is_deterministic_for_a_given_seed():
-    a = generate_map_csv(rows=6, cols=6, seed="galilee")
-    b = generate_map_csv(rows=6, cols=6, seed="galilee")
+    a = generate_map_csv(rows=6, cols=6, seed="antioch")
+    b = generate_map_csv(rows=6, cols=6, seed="antioch")
     assert a == b
 
 
 def test_generate_map_csv_differs_across_seeds():
-    a = generate_map_csv(rows=8, cols=8, seed="galilee")
-    b = generate_map_csv(rows=8, cols=8, seed="jerusalem")
+    a = generate_map_csv(rows=8, cols=8, seed="antioch")
+    b = generate_map_csv(rows=8, cols=8, seed="rome")
     assert a != b
 
 
@@ -439,19 +439,19 @@ def test_update_character_positions_csv_only_touches_x_and_y(tmp_path):
     path.write_text(
         "name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,"
         "magic_attack,magic_defense,faith,bravery,patience,love\n"
-        "Jesus,Player,Prophet,1,1,15,4,2,100,Preach|Heal,255,200,0,assets/jesus.png,25,6,129,24,3,20\n"
+        "Paul,Player,Missionary,1,1,15,4,2,100,Preach|Heal,255,200,0,assets/paul.png,25,6,129,24,3,20\n"
         "Peter,Player,Apostle,0,0,12,3,1,20,Preach|Fish net,50,120,240,assets/peter.png,10,28,122,6,32,25\n",
         encoding="utf-8",
     )
 
-    update_character_positions_csv(str(path), {"Jesus": (5, 6)})
+    update_character_positions_csv(str(path), {"Paul": (5, 6)})
     rows = load_characters_from_csv(str(path))
 
-    jesus = next(r for r in rows if r["name"] == "Jesus")
+    paul = next(r for r in rows if r["name"] == "Paul")
     peter = next(r for r in rows if r["name"] == "Peter")
-    assert (jesus["x"], jesus["y"]) == (5, 6)
+    assert (paul["x"], paul["y"]) == (5, 6)
     assert (peter["x"], peter["y"]) == (0, 0)  # untouched - wasn't in the positions dict
     # Every other column survives the round trip unchanged.
-    assert jesus["skills"] == ["Preach", "Heal"]
-    assert jesus["magic_attack"] == 25
-    assert jesus["portrait_path"] == "assets/jesus.png"
+    assert paul["skills"] == ["Preach", "Heal"]
+    assert paul["magic_attack"] == 25
+    assert paul["portrait_path"] == "assets/paul.png"

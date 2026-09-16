@@ -1,7 +1,7 @@
 node_id,title,map_layout,terrain_layout,characters
-galilee,Sea of Galilee,stages/galilee/map_layout.csv,stages/galilee/terrain_layout.csv,stages/galilee/characters.csv
-cana,Wedding at Cana,stages/cana/map_layout.csv,stages/cana/terrain_layout.csv,stages/cana/characters.csv
-nazareth,Nazareth,stages/nazareth/map_layout.csv,stages/nazareth/terrain_layout.csv,stages/nazareth/characters.csv
-samaria,Samaria,stages/samaria/map_layout.csv,stages/samaria/terrain_layout.csv,stages/samaria/characters.csv
-bethany,Bethany,stages/bethany/map_layout.csv,stages/bethany/terrain_layout.csv,stages/bethany/characters.csv
-jerusalem,Jerusalem,stages/jerusalem/map_layout.csv,stages/jerusalem/terrain_layout.csv,stages/jerusalem/characters.csv
+jerusalem,Paul Among the Apostles,stages/jerusalem/map_layout.csv,stages/jerusalem/terrain_layout.csv,stages/jerusalem/characters.csv
+antioch,The First Gentile Church,stages/antioch/map_layout.csv,stages/antioch/terrain_layout.csv,stages/antioch/characters.csv
+philippi,The Jailer's Household,stages/philippi/map_layout.csv,stages/philippi/terrain_layout.csv,stages/philippi/characters.csv
+corinth,A Fractious Church,stages/corinth/map_layout.csv,stages/corinth/terrain_layout.csv,stages/corinth/characters.csv
+ephesus,Riot of the Silversmiths,stages/ephesus/map_layout.csv,stages/ephesus/terrain_layout.csv,stages/ephesus/characters.csv
+rome,Nero's Persecution,stages/rome/map_layout.csv,stages/rome/terrain_layout.csv,stages/rome/characters.csv

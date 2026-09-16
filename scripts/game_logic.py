@@ -419,7 +419,7 @@ def tile_elevation(x, y):
 # sharing one generic statline, per FFT/Tactics Ogre convention.
 CLASS_HIT_BONUS = {"Soldier": 0.05, "Sergeant": 0.05}
 CLASS_IGNORES_UPHILL_PENALTY = {"Archer"}
-CLASS_PREACH_MULTIPLIER = {"Prophet": 1.5}
+CLASS_PREACH_MULTIPLIER = {"Missionary": 1.5}
 CLASS_SHOVE_DISTANCE = {"Sergeant": 3}
 OFFICER_AURA_CLASS = "Officer"
 OFFICER_AURA_RANGE = 2
@@ -1147,12 +1147,12 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
     stats_scroll = 0
     stats_panel_rect = pygame.Rect(10, 10, 280, 180)
     show_hud = True
-    has_jesus = any(unit.name == "Jesus" for unit in units)
-    dialogue_lines = dialogues.get(1, []) if has_jesus else []
+    has_leader = any(unit.name == "Paul" for unit in units)
+    dialogue_lines = dialogues.get(1, []) if has_leader else []
     dialogue_index = 0
     dialogue_active = bool(dialogue_lines)
     # dialogues.csv can script mid-battle beats under later turn numbers (e.g.
-    # Jerusalem's arrest scene continues at turn 10/11); turn_counter tracks
+    # Rome's persecution scene continues at turn 10/11); turn_counter tracks
     # how many units have taken a turn so far and is checked each time a new
     # one becomes active, so those beats actually fire instead of sitting
     # unreachable in the data.
@@ -1174,7 +1174,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
                 active_unit = ready[0]
                 inspected_unit = active_unit
                 turn_counter += 1
-                pending_dialogue = dialogues.get(turn_counter) if has_jesus else None
+                pending_dialogue = dialogues.get(turn_counter) if has_leader else None
                 if pending_dialogue:
                     dialogue_lines = pending_dialogue
                     dialogue_index = 0

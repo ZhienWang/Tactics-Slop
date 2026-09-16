@@ -49,7 +49,7 @@ GAME_SETTINGS_CSV_DUMMY = """setting_name,value
 background_path,"""
 
 DIALOGUES_CSV_DUMMY = """character,turn,text
-Jesus,1,"Welcome, friends. Our journey begins here."""
+Paul,1,"Welcome, friends. Our journey begins here."""
 
 TERRAIN_TILE_PATHS = [
     "assets/grass.jpg",
@@ -102,12 +102,12 @@ TERRAIN_THEMES = {
 # generating one on the fly. Matches the theme each stage's actual saved
 # terrain already uses, so a regenerated map still reads as the same place.
 STAGE_THEMES = {
-    "galilee": "coastal",
-    "cana": "village",
-    "nazareth": "hillside",
-    "samaria": "desert",
-    "bethany": "mountain",
-    "jerusalem": "city",
+    "jerusalem": "coastal",
+    "antioch": "village",
+    "philippi": "hillside",
+    "corinth": "desert",
+    "ephesus": "mountain",
+    "rome": "city",
 }
 
 

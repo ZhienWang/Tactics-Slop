@@ -110,24 +110,25 @@ def test_move_action_is_hidden_when_unit_has_no_reachable_destination():
 
 
 def test_dialogues_are_loaded_by_character_and_turn():
-    dialogues = load_dialogues_from_csv(map_id="jerusalem")
+    dialogues = load_dialogues_from_csv(map_id="rome")
 
     assert dialogues[1][0] == (
-        "Judas",
-        "(Approaches Jesus with a kiss) Here's the man you want, Romans.",
+        "Demas",
+        "(Slips toward the Forum) I have loved this present world too much, Paul. Rome's favor is worth more to me than your chains.",
     )
-    assert dialogues[1][-1] == ("James", "Lord, should we strike with our swords?")
+    assert dialogues[1][-1] == ("Silas", "Paul, should we resist when the guard comes for us?")
 
 
 def test_dialogues_are_scoped_per_stage():
-    galilee = load_dialogues_from_csv(map_id="galilee")
     jerusalem = load_dialogues_from_csv(map_id="jerusalem")
+    rome = load_dialogues_from_csv(map_id="rome")
 
-    assert galilee[1] == [
-        ("Jesus", "Come, follow me, and I will send you out to fish for people."),
-        ("Peter", "Lord, we have left everything to follow you. A patrol blocks the shore ahead!"),
+    assert jerusalem[1] == [
+        ("Paul", "I persecuted the church of God and tried to destroy it, but God, who set me apart before I was born, was pleased to reveal his Son to me."),
+        ("Barnabas", "The believers still fear you, Paul, and the temple guard has marked this house. Stand ready, all of you."),
     ]
-    assert all(speaker != "Jesus" or "fish for people" not in text for speaker, text in jerusalem[1])
+    assert all(speaker != "Demas" for speaker, text in jerusalem[1])
+    assert any(speaker == "Demas" for speaker, text in rome[1])
 
 
 def test_fish_net_targets_enemies_and_prevents_movement():
@@ -499,10 +500,10 @@ def test_apply_preach_does_not_convert_below_faith_cap():
 
 
 def test_apply_preach_converts_and_flashes_at_faith_cap():
-    jesus = make_unit("Jesus", "Player", 0, 0, 200, 0, [])
+    paul = make_unit("Paul", "Player", 0, 0, 200, 0, [])
     judas = make_unit("Judas", "Enemy", 0, 1, game_logic.FAITH_CAP - 1, 0, [])
 
-    message = game_logic.apply_preach(jesus, judas)
+    message = game_logic.apply_preach(paul, judas)
 
     assert judas.team == "Player"
     assert judas.faith == game_logic.FAITH_CAP
@@ -678,18 +679,18 @@ def test_officer_aura_boosts_nearby_allies_hit_chance_only():
     assert with_enemy_team_officer == no_aura  # an Officer on the target's own team doesn't buff the attacker
 
 
-def test_prophet_preaches_with_a_faith_multiplier():
-    prophet = make_unit("Jesus", "Player", 0, 0, 40, 0, [], char_class="Prophet")
+def test_missionary_preaches_with_a_faith_multiplier():
+    missionary = make_unit("Paul", "Player", 0, 0, 40, 0, [], char_class="Missionary")
     apostle = make_unit("Peter", "Player", 0, 1, 40, 0, [], char_class="Apostle")
     target_a = make_unit("Enemy1", "Enemy", 0, 2, 50, 0, [])
     target_b = make_unit("Enemy2", "Enemy", 0, 3, 50, 0, [])
 
-    game_logic.apply_preach(prophet, target_a)
+    game_logic.apply_preach(missionary, target_a)
     game_logic.apply_preach(apostle, target_b)
 
-    prophet_gain = target_a.faith - 50
+    missionary_gain = target_a.faith - 50
     apostle_gain = target_b.faith - 50
-    assert prophet_gain == pytest.approx(apostle_gain * game_logic.CLASS_PREACH_MULTIPLIER["Prophet"])
+    assert missionary_gain == pytest.approx(apostle_gain * game_logic.CLASS_PREACH_MULTIPLIER["Missionary"])
 
 
 def test_sergeant_shove_pushes_farther_than_default():

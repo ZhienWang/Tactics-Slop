@@ -258,7 +258,7 @@ CHESS_PIECE_DIR = "assets/chess_pieces"
 # rank-and-file, respectively. See assets/chess_pieces/CREDITS.txt for the
 # art's source/license (Cburnett's SVG chess set on Wikimedia Commons).
 CHESS_PIECE_BY_CLASS = {
-    "Prophet": "king",
+    "Missionary": "king",
     "Officer": "queen",
     "Apostle": "bishop",
     "Sergeant": "knight",
@@ -295,7 +295,7 @@ PIXEL_UNIT_DIR = "assets/pixel_units"
 # fits their role best, since a chibi human sprite reads fine at on-map
 # icon size regardless of the exact job title.
 PIXEL_UNIT_BY_CLASS = {
-    "Prophet": "cleric",
+    "Missionary": "cleric",
     "Apostle": "cleric",
     "Officer": "fighter",
     "Sergeant": "fighter",

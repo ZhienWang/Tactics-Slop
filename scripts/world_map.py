@@ -26,21 +26,21 @@ from scripts.game_logic import Unit, main as run_battle
 # back to this hardcoded route (a small, mostly-linear path in the spirit of
 # the Super Mario World overworld) if that file is ever missing/malformed.
 _FALLBACK_NODES = {
-    "galilee":   {"pos": (352, 320),  "name": "Sea of Galilee", "type": "stage", "connections": ["capernaum"]},
-    "capernaum": {"pos": (273, 570),  "name": "Capernaum",      "type": "town",  "connections": ["galilee", "cana"]},
-    "cana":      {"pos": (609, 500),  "name": "Cana",           "type": "stage", "connections": ["capernaum", "nazareth", "samaria"]},
-    "nazareth":  {"pos": (727, 258),  "name": "Nazareth",       "type": "stage", "connections": ["cana", "jericho"]},
-    "samaria":   {"pos": (727, 695),  "name": "Samaria",        "type": "stage", "connections": ["cana", "jericho"]},
-    "jericho":   {"pos": (969, 438),  "name": "Jericho",        "type": "town",  "connections": ["nazareth", "samaria", "bethany"]},
-    "bethany":   {"pos": (1266, 563), "name": "Bethany",        "type": "stage", "connections": ["jericho", "jerusalem"]},
-    "jerusalem": {"pos": (1406, 258), "name": "Jerusalem",      "type": "stage", "connections": ["bethany"]},
+    "jerusalem": {"pos": (352, 320),  "name": "Jerusalem",  "type": "stage", "connections": ["caesarea"]},
+    "caesarea":  {"pos": (273, 570),  "name": "Caesarea",   "type": "town",  "connections": ["jerusalem", "antioch"]},
+    "antioch":   {"pos": (609, 500),  "name": "Antioch",    "type": "stage", "connections": ["caesarea", "philippi", "corinth"]},
+    "philippi":  {"pos": (727, 258),  "name": "Philippi",   "type": "stage", "connections": ["antioch", "troas"]},
+    "corinth":   {"pos": (727, 695),  "name": "Corinth",    "type": "stage", "connections": ["antioch", "troas"]},
+    "troas":     {"pos": (969, 438),  "name": "Troas",      "type": "town",  "connections": ["philippi", "corinth", "ephesus"]},
+    "ephesus":   {"pos": (1266, 563), "name": "Ephesus",    "type": "stage", "connections": ["troas", "rome"]},
+    "rome":      {"pos": (1406, 258), "name": "Rome",       "type": "stage", "connections": ["ephesus"]},
 }
 try:
     NODES, START_NODE = load_world_map_nodes()
     if not NODES:
         raise ValueError("world_map_nodes.csv produced no nodes")
 except (OSError, ValueError, KeyError):
-    NODES, START_NODE = _FALLBACK_NODES, "galilee"
+    NODES, START_NODE = _FALLBACK_NODES, "jerusalem"
 NODE_CLICK_RADIUS = 26
 
 STATE_MAP = "MAP"
@@ -788,7 +788,7 @@ async def main():
             screen.blit(map_background, (0, 0))
         else:
             screen.fill((30, 34, 40))
-        title = title_font.render("The Road to Jerusalem", True, PANEL_BORDER)
+        title = title_font.render("The Road to Rome", True, PANEL_BORDER)
         screen.blit(title, (30, 24))
 
         draw_path_and_nodes(screen, font, current_node, visited)

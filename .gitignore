@@ -8,4 +8,5 @@ dist/
 dist_desktop/
 build_pyinstaller/
 itch_release/
+RoadToRome-*.zip
 RoadToJerusalem-*.zip
