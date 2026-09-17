@@ -24,13 +24,13 @@ RAW_SVG_DATA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 256" 
        <stop offset="0%" stop-color="#94a3b8"/><stop offset="100%" stop-color="#475569"/> 
      </linearGradient> 
 
-     <!-- Tunic & Robe Colors --> 
-     <linearGradient id="jesusWhite" x1="0%" y1="0%" x2="100%" y2="100%"> 
-       <stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#cbd5e1"/> 
-     </linearGradient> 
-     <linearGradient id="jesusRed" x1="0%" y1="0%" x2="100%" y2="100%"> 
-       <stop offset="0%" stop-color="#f87171"/><stop offset="100%" stop-color="#991b1b"/> 
-     </linearGradient> 
+     <!-- Tunic & Robe Colors -->
+     <linearGradient id="paleWhite" x1="0%" y1="0%" x2="100%" y2="100%">
+       <stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#cbd5e1"/>
+     </linearGradient>
+     <linearGradient id="crimsonRed" x1="0%" y1="0%" x2="100%" y2="100%">
+       <stop offset="0%" stop-color="#f87171"/><stop offset="100%" stop-color="#991b1b"/>
+     </linearGradient>
      <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%"> 
        <stop offset="0%" stop-color="#fde047"/><stop offset="100%" stop-color="#ca8a04"/> 
      </linearGradient> 
@@ -98,7 +98,7 @@ RAW_SVG_DATA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 256" 
    <g transform="translate(192, 0)"> 
      <use href="#iso-tile"/> 
      <path d="M 28 41.5 L 32 43.5 L 32 48 L 28 46 Z" fill="url(#greenRobe)"/> 
-     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#jesusWhite)"/> 
+     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#paleWhite)"/>
      <!-- Long Grey Hair/Beard --> 
      <path d="M 25 32 L 32 27 L 39 32 L 38 42 L 26 42 Z" fill="url(#hairGrey)"/> 
      <use href="#chibi-head"/> 
@@ -124,7 +124,7 @@ RAW_SVG_DATA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 256" 
    <g transform="translate(448, 0)"> 
      <use href="#iso-tile"/> 
      <path d="M 28 41.5 L 32 43.5 L 32 48 L 28 46 Z" fill="url(#tealRobe)"/> 
-     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#jesusRed)"/> 
+     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#crimsonRed)"/>
      <!-- Flowing Brown Hair (No Beard) --> 
      <path d="M 25 32 C 25 25, 39 25, 39 32 L 39 40 L 25 40 Z" fill="url(#hairDark)"/> 
      <use href="#chibi-head"/> 
@@ -150,29 +150,29 @@ RAW_SVG_DATA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 256" 
    <g transform="translate(128, 80)"> 
      <use href="#iso-tile"/> 
      <path d="M 28 41.5 L 32 43.5 L 32 48 L 28 46 Z" fill="url(#purpleRobe)"/> 
-     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#jesusWhite)"/> 
-     <path d="M 26 32 L 32 28 L 38 32 L 38 36 L 26 36 Z" fill="url(#hairDark)"/> 
-     <use href="#chibi-head"/> 
-     <!-- Knife --> 
-     <polygon points="39,40 41,36 40,43" fill="url(#jesusWhite)"/> 
+     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#paleWhite)"/>
+     <path d="M 26 32 L 32 28 L 38 32 L 38 36 L 26 36 Z" fill="url(#hairDark)"/>
+     <use href="#chibi-head"/>
+     <!-- Knife -->
+     <polygon points="39,40 41,36 40,43" fill="url(#paleWhite)"/> 
    </g> 
 
-   <!-- JESUS CHRIST (CENTER) --> 
-   <g transform="translate(320, 80)"> 
-     <!-- Extra Golden Divine Base --> 
-     <polygon points="32,64 52,54 32,44 12,54" fill="url(#gold)" opacity="0.4"/> 
-     <use href="#iso-tile"/> 
-     <!-- White Tunic & Red Drape --> 
-     <path d="M 27 40 L 32 42.5 L 32 48 C 28 48, 27 44, 27 40 Z" fill="url(#jesusWhite)"/> 
-     <path d="M 32 42.5 L 37 40 L 37 45 C 37 48, 32 48, 32 48 Z" fill="url(#jesusRed)"/> 
-     <!-- Flowing Hair & Neat Beard --> 
-     <path d="M 24 32 C 24 24, 40 24, 40 32 L 39 42 L 25 42 Z" fill="url(#hairDark)"/> 
-     <path d="M 28 38 L 32 43 L 36 38 Z" fill="url(#hairDark)"/> 
-     <use href="#chibi-head"/> 
-     <!-- Isometric Golden Halo --> 
-     <ellipse cx="32" cy="24" rx="9" ry="3.5" fill="none" stroke="url(#gold)" stroke-width="1.8"/> 
-     <ellipse cx="32" cy="24" rx="7" ry="2.5" fill="url(#gold)" opacity="0.3"/> 
-   </g> 
+   <!-- PAUL (CENTER) -->
+   <g transform="translate(320, 80)">
+     <use href="#iso-tile"/>
+     <!-- Traveler's Robe: brown tunic (tentmaker's cloth), purple trim (once a Pharisee) -->
+     <path d="M 28 41.5 L 32 43.5 L 32 48 L 28 46 Z" fill="url(#brownRobe)"/>
+     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#purpleRobe)"/>
+     <!-- Balding Hairline & Pointed Beard - no halo, unlike the master he preaches -->
+     <path d="M 28 32 L 32 30.5 L 36 32 L 36 33.5 L 28 33.5 Z" fill="url(#hairDark)"/>
+     <path d="M 27 38 L 32 44 L 37 38 L 36 41 L 32 45 L 28 41 Z" fill="url(#hairDark)"/>
+     <use href="#chibi-head"/>
+     <!-- A Letter/Scroll in hand (the epistle-writer) -->
+     <rect x="37.5" y="39.5" width="4" height="2.4" rx="0.6" fill="url(#paleWhite)"/>
+     <!-- Short Sword at his side (tradition holds he was beheaded for the faith) -->
+     <line x1="23" y1="47" x2="23" y2="37.5" stroke="#94a3b8" stroke-width="1.3"/>
+     <path d="M 21.5 37.5 L 24.5 37.5 L 23 35 Z" fill="#e2e8f0"/>
+   </g>
 
    <!-- 7. THOMAS (Builder's Square / Spear) --> 
    <g transform="translate(512, 80)"> 
@@ -202,10 +202,10 @@ RAW_SVG_DATA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 256" 
    <!-- 9. JAMES THE LESSER (Fuller's Club) --> 
    <g transform="translate(192, 160)"> 
      <use href="#iso-tile"/> 
-     <path d="M 28 41.5 L 32 43.5 L 32 48 L 28 46 Z" fill="url(#jesusWhite)"/> 
-     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#purpleRobe)"/> 
-     <path d="M 26 32 L 32 28 L 38 32 L 38 36 L 26 36 Z" fill="url(#hairDark)"/> 
-     <use href="#chibi-head"/> 
+     <path d="M 28 41.5 L 32 43.5 L 32 48 L 28 46 Z" fill="url(#paleWhite)"/>
+     <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#purpleRobe)"/>
+     <path d="M 26 32 L 32 28 L 38 32 L 38 36 L 26 36 Z" fill="url(#hairDark)"/>
+     <use href="#chibi-head"/>
      <!-- Wooden Club --> 
      <line x1="39" y1="46" x2="42" y2="30" stroke="#451a03" stroke-width="2" stroke-linecap="round"/> 
    </g> 
@@ -217,9 +217,9 @@ RAW_SVG_DATA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 256" 
      <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#tealRobe)"/> 
      <path d="M 26 32 L 32 28 L 38 32 L 38 36 L 26 36 Z" fill="url(#hairDark)"/> 
      <use href="#chibi-head"/> 
-     <!-- Halberd/Axe --> 
-     <line x1="40" y1="48" x2="40" y2="28" stroke="#451a03" stroke-width="1.2"/> 
-     <path d="M 40 30 L 43 28 L 43 33 Z" fill="url(#jesusWhite)"/> 
+     <!-- Halberd/Axe -->
+     <line x1="40" y1="48" x2="40" y2="28" stroke="#451a03" stroke-width="1.2"/>
+     <path d="M 40 30 L 43 28 L 43 33 Z" fill="url(#paleWhite)"/> 
    </g> 
 
    <!-- 11. SIMON THE ZEALOT (Saw) --> 
@@ -229,8 +229,8 @@ RAW_SVG_DATA = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 256" 
      <path d="M 32 43.5 L 36 41.5 L 36 46 L 32 48 Z" fill="url(#greenRobe)"/> 
      <path d="M 26 31 L 32 27 L 38 31 L 38 35 L 26 35 Z" fill="url(#hairGrey)"/> 
      <use href="#chibi-head"/> 
-     <!-- Hand Saw --> 
-     <line x1="39" y1="46" x2="39" y2="32" stroke="url(#jesusWhite)" stroke-width="1.5"/> 
+     <!-- Hand Saw -->
+     <line x1="39" y1="46" x2="39" y2="32" stroke="url(#paleWhite)" stroke-width="1.5"/> 
      <path d="M 39 32 L 41 34 L 39 36 L 41 38 L 39 40" stroke="#475569" stroke-width="0.8" fill="none"/> 
    </g> 
 
@@ -312,7 +312,7 @@ def split_svg(xml_string, output_dir="individual_figures"):
         
         name_found = False
         # Look through found comments for names (ignoring structure comments like "skin & hair")
-        potential_names = [c for c in all_comments if re.match(r'^\d+\.|JESUS', c)]
+        potential_names = [c for c in all_comments if re.match(r'^\d+\.|PAUL', c)]
         
         if i < len(potential_names):
             raw_name = potential_names[i]
