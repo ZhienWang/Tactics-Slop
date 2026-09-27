@@ -12,7 +12,7 @@
 | **Platform** | Desktop (Windows dev target), single-player, local only |
 | **Entry point** | `python fftr.py` |
 | **Setting** | The early Christian Church, ~AD 35–64 — after the Gospels, during the Acts-of-the-Apostles era, ending with Nero's persecution in Rome |
-| **Session shape** | World map (node-graph overworld) → battle (tactics grid) → back to world map, roster/loadout persists in-memory for the session |
+| **Session shape** | World map (node-graph overworld) → battle (tactics grid) → back to world map, roster/loadout persists in-memory for the session. *Currently the world map is hidden: both entrypoints boot straight into the Jerusalem battle (`run_first_stage` in `game_logic.py`), and `world_map.py` is unchanged and still runnable on its own.* |
 
 The player leads a fixed party of the early Church's apostles and missionaries — led by **Paul** — across six cities of the Roman Empire, preaching, converting, and surviving armed persecution, ending at Paul and Peter's martyrdom under Nero in Rome.
 
@@ -30,20 +30,20 @@ Jerusalem → Caesarea (town) → Antioch → Philippi ⟍
 
 | # | Stage | Title | Narrative beat | Difficulty (enemy count) |
 |---|---|---|---|---|
-| 1 | Jerusalem | *Paul Among the Apostles* | Paul arrives in Jerusalem after his conversion (Acts 9:26–30); the church is wary of him, Barnabas vouches for him | 2 Legionnaires |
+| 1 | Jerusalem | *Paul Among the Apostles* | Paul arrives in Jerusalem after his conversion (Acts 9:26–30); the church is wary of him, Barnabas vouches for him | 6 Legionnaires (vs. a 5-unit party) |
 | 2 | Antioch | *The First Gentile Church* | The first Gentile congregation forms; Paul and Barnabas are commissioned as missionaries | 3 Legionnaires |
 | 3 | Philippi | *The Jailer's Household* | Paul and Silas are imprisoned, an earthquake frees them, the jailer converts (Acts 16) | 3 Legionnaires + 1 Archer |
 | 4 | Corinth | *A Fractious Church* | Paul plants a divided but growing church; brought before the proconsul Gallio (Acts 18) | 3 Legionnaires + 1 Archer |
 | 5 | Ephesus | *Riot of the Silversmiths* | Demetrius incites a riot in defense of Artemis worship (Acts 19) | 5 Legionnaires + 1 Archer + 1 Sergeant |
 | 6 | Rome | *Nero's Persecution* | Climax: Demas deserts the faith for the world; Paul and Peter face Roman persecution under Nero | Demas (Enemy Apostle) + Centurion Marcus + 20 Legionnaires |
 
-Each stage has hand-authored `map_layout.csv`, `terrain_layout.csv`, and `characters.csv` under `data/stages/<name>/`. Difficulty escalates from stage to stage purely through enemy count/composition (all Legionnaire-family units share the same base stat template, randomized per row).
+Each stage has hand-authored `map_layout.csv`, `terrain_layout.csv`, and `characters.csv` under `data/stages/<name>/`, (terrain cells are single-letter codes - `G` grass, `W` water, ... - resolved to tile art through `data/terrain_types.csv`), plus an optional `props.csv` (`x, y, prop, height`) placing scenery - `tree` or `boulder` - that occupies its tile and stands `height` map height units tall. Heights in `map_layout.csv` are whole numbers, or half steps (0.5, 1.5, ...) which draw as slopes ramping between the lower and higher tile beside them. Difficulty escalates from stage to stage purely through enemy count/composition (all Legionnaire-family units share the same base stat template, randomized per row).
 
 Dialogue is scripted per stage/turn in `data/dialogues.csv` (`map, turn, character, text`) and fires mid-battle at specific turn counts. Non-climax stages get 4 lines (opening exchange at turn 1, a reaction beat at turn 8–9); Rome, the climax, gets 8 lines including Demas's desertion and Paul's final "I have fought the good fight" speech at turn 11. Dialogue only plays if Paul is present in the stage's roster (which is every stage).
 
 ## 3. The Party
 
-12 fixed player units appear in every stage (position/stat values vary slightly per stage file):
+12 fixed player units, drawn on per stage (position/stat values vary slightly per stage file). Jerusalem currently fields 5 of them - Paul, Peter, Barnabas, Mark and John, the units its narrative beat turns on:
 
 | Unit | Class | Role/flavor |
 |---|---|---|
@@ -71,7 +71,7 @@ Dialogue is scripted per stage/turn in `data/dialogues.csv` (`map, turn, charact
 Charge-Time (CT) system: every living unit accrues `CT += Speed` each tick; the first unit to reach CT 100 acts, then resets to 0. An 8-icon turn-order preview is simulated ahead of time for the UI.
 
 ### Movement
-A*-style flood fill bounded by `mv` (move range) and `jump` (max elevation change crossable); occupied tiles block movement (no stacking). Standing in water reduces effective move range by 1 tile.
+A*-style flood fill bounded by `mv` (move range) and `jump` (max elevation change crossable); occupied tiles block movement (no stacking), as do tiles holding scenery props. Standing in water reduces effective move range by 1 tile. A slope tile is half a height step, so a 0→0.5→1 ramp is climbable by a unit that could already manage the 0→1 step.
 
 ### Hit resolution (Physical skills only — Slash, Shoot)
 ```

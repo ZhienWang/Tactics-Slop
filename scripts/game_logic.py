@@ -13,6 +13,8 @@ from scripts.data_editor import (
     load_equipment_from_csv,
     load_books_from_csv,
     load_terrain_from_csv,
+    load_props_from_csv,
+    load_stage_manifest,
     load_settings_from_csv,
     load_dialogues_from_csv,
     load_characters_from_csv,
@@ -29,6 +31,7 @@ from scripts.config import (
     SCREEN_HEIGHT,
     TILE_WIDTH,
     TILE_HEIGHT,
+    TILE_RISE,
     BG_COLOR,
     CURSOR_COLOR,
     FAITH_CAP,
@@ -42,6 +45,8 @@ from scripts.assets import (
     build_character_face_portraits,
     build_character_chess_art,
     build_character_pixel_art,
+    build_tree_sprite,
+    build_boulder_sprite,
     draw_tile_texture,
     create_projectile_surface,
     bring_window_to_front,
@@ -49,8 +54,9 @@ from scripts.assets import (
     draw_nine_slice_panel,
     frame_content_rect,
     get_font,
+    terrain_top_face,
 )
-from scripts.controls import screen_to_map
+from scripts.controls import screen_to_map, tile_corner_offsets, tile_top_points, FLAT_CORNER_OFFSETS
 
 # --- RUNTIME DATA ---
 MAP_DATA = []
@@ -62,6 +68,10 @@ EQUIPMENT_REGISTRY = {}
 BOOK_REGISTRY = {}
 CHARACTER_ROSTER = []
 TERRAIN_LAYOUT = []
+# Scenery standing on the map (trees and boulders), and the tiles they occupy -
+# a prop owns its whole tile, so nothing can move onto or be shoved into it.
+MAP_PROPS = []
+PROP_TILES = set()
 
 # A held book's stat gain per the holder's own turn is randomized around 2%
 # rather than fixed, since this is a first pass at the balance numbers.
@@ -194,7 +204,7 @@ def get_valid_moves_a_star(unit, units_list):
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = cx + dx, cy + dy
             if 0 <= nx < MAP_COLS and 0 <= ny < MAP_ROWS:
-                if (nx, ny) in occupied_tiles:
+                if (nx, ny) in occupied_tiles or (nx, ny) in PROP_TILES:
                     continue
                 current_z = MAP_DATA[cy][cx]
                 target_z = MAP_DATA[ny][nx]
@@ -339,7 +349,7 @@ def push_unit_away(caster, target, units_list, tiles=SHOVE_DISTANCE):
         step = (1 if dx > 0 else -1, 0)
     else:
         step = (0, 1 if dy > 0 else -1)
-    occupied = {(u.x, u.y) for u in units_list if u.is_alive() and u != target}
+    occupied = {(u.x, u.y) for u in units_list if u.is_alive() and u != target} | PROP_TILES
     x, y = target.x, target.y
     for _ in range(tiles):
         nx, ny = x + step[0], y + step[1]
@@ -636,7 +646,12 @@ def apply_item_effect(item_name, user, target, units_list=None):
     return f"{user.name} uses {item_name} on {target.name}."
 
 
-def draw_dialogue_window(surface, font, speaker, text, frame=None):
+def draw_dialogue_window(surface, speaker, text, frame=None):
+    # Dialogue gets its own larger fonts than the general HUD so story text is
+    # comfortable to read; line spacing follows the font's own line height.
+    speaker_font = get_font(40, bold=True)
+    font = get_font(36)
+    hint_font = get_font(24)
     width, height = 1200, 340
     window = pygame.Rect(SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT - height - 40, width, height)
     if frame:
@@ -647,7 +662,8 @@ def draw_dialogue_window(surface, font, speaker, text, frame=None):
         pygame.draw.rect(surface, CURSOR_COLOR, window, 2)
         content = pygame.Rect(window.x + 18, window.y + 14, window.width - 36, window.height - 28)
 
-    surface.blit(font.render(speaker, True, CURSOR_COLOR), (content.x, content.y))
+    surface.blit(speaker_font.render(speaker, True, CURSOR_COLOR), (content.x, content.y))
+    text_top = content.y + speaker_font.get_linesize() + 8
 
     words = text.split()
     lines = []
@@ -662,8 +678,9 @@ def draw_dialogue_window(surface, font, speaker, text, frame=None):
     if line:
         lines.append(line)
     for line_index, line in enumerate(lines):
-        surface.blit(font.render(line, True, (240, 240, 240)), (content.x, content.y + 32 + line_index * 22))
-    surface.blit(font.render("[Space / Enter] Continue", True, (160, 160, 160)), (content.right - 210, content.bottom - 22))
+        surface.blit(font.render(line, True, (240, 240, 240)), (content.x, text_top + line_index * font.get_linesize()))
+    hint = hint_font.render("[Space / Enter] Continue", True, (160, 160, 160))
+    surface.blit(hint, (content.right - hint.get_width(), content.bottom - hint.get_height()))
 
 
 def action_menu_layout(current_menu, frame=None):
@@ -864,6 +881,8 @@ def get_ai_move_destination(unit, units_list):
             continue
         if any(u.is_alive() and u.x == nx and u.y == ny and u != unit for u in units_list):
             continue
+        if (nx, ny) in PROP_TILES:
+            continue
         score = (abs(nx - target.x) + abs(ny - target.y), -(nx + ny))
         if best_score is None or score < best_score:
             best_score = score
@@ -898,7 +917,7 @@ def get_render_order(map_cols, map_rows, rotation):
 def iso_to_screen(map_x, map_y, map_z, origin_x, origin_y, rotation=0, map_cols=0, map_rows=0, zoom=1.0):
     rx, ry = rotate_grid_position(map_x, map_y, rotation, map_cols, map_rows)
     screen_x = origin_x + (rx - ry) * (TILE_WIDTH * zoom / 2)
-    screen_y = origin_y + (rx + ry) * (TILE_HEIGHT * zoom / 2) - (map_z * 14 * zoom)
+    screen_y = origin_y + (rx + ry) * (TILE_HEIGHT * zoom / 2) - (map_z * TILE_RISE * zoom)
     return screen_x, screen_y
 
 
@@ -907,24 +926,81 @@ def iso_to_screen(map_x, map_y, map_z, origin_x, origin_y, rotation=0, map_cols=
 # rather than flat painted diamonds. Elevation adds on top of this base.
 TILE_DEPTH_BASE = 16
 
+# Brightness multiplier for a slope's texture, by which way its face turns.
+# A face turned toward the camera sits partway between a lit top and its
+# matching wall (draw_iso_tile's +rx-facing right wall is 0.7, its
+# +ry-facing left wall 0.5). A face turned away is seen at a grazing angle
+# and is shaded slightly too - brightening it instead made it read as a
+# pale flat tile rather than a ramp.
+SLOPE_SHADE_TOWARD_RX = 0.85
+SLOPE_SHADE_TOWARD_RY = 0.75
+SLOPE_SHADE_AWAY = 0.9
 
-def draw_iso_tile(surface, sx, sy, height, color, terrain_image=None, zoom=1.0, wall_color=None):
+_slope_texture_cache = {}
+
+
+def build_slope_texture(terrain_image, tile_width, tile_height, rise, corner_offsets):
+    """Shears a terrain sprite's top face (see assets.terrain_top_face) onto
+    a slope's tilted top face - the sprite's baked slab edges are left off,
+    since draw_iso_tile's own walls already taper to follow the slope.
+    A planar slope is an affine warp of the flat diamond, and one that only
+    ever moves pixels vertically - so it's done a pixel column at a time:
+    each column is scaled vertically by the same factor and shifted by an
+    amount that varies linearly across the tile. The returned surface is
+    `rise` taller than the flat tile, with the flat tile's top at rise / 2
+    (a slope's corners move at most half a height step either way)."""
+    top, right, _, left = corner_offsets
+    # The top face's height offset is top + climb_u * u + climb_v * v, where
+    # u runs top->right corner and v runs top->left corner across the tile.
+    climb_u, climb_v = right - top, left - top
+    column_height = max(1, round(tile_height - (climb_u + climb_v) * rise))
+
+    flat = pygame.transform.smoothscale(terrain_top_face(terrain_image), (tile_width, tile_height))
+    sloped = pygame.Surface((tile_width, tile_height + math.ceil(rise)), pygame.SRCALPHA)
+    for column_x in range(tile_width):
+        column = pygame.transform.smoothscale(flat.subsurface((column_x, 0, 1, tile_height)), (1, column_height))
+        across = (column_x + 0.5) / tile_width - 0.5
+        shift = rise / 2 - top * rise - (climb_u - climb_v) * rise * across
+        sloped.blit(column, (column_x, round(shift)))
+
+    # A lower right/left corner than the top corner means the face turns
+    # toward the camera along that axis.
+    if climb_u < 0:
+        shade = SLOPE_SHADE_TOWARD_RX
+    elif climb_v < 0:
+        shade = SLOPE_SHADE_TOWARD_RY
+    else:
+        shade = SLOPE_SHADE_AWAY
+    level = round(255 * shade)
+    sloped.fill((level, level, level, 255), special_flags=pygame.BLEND_RGBA_MULT)
+    return sloped
+
+
+def draw_iso_tile(surface, sx, sy, height, color, terrain_image=None, zoom=1.0, wall_color=None, corner_offsets=FLAT_CORNER_OFFSETS):
+    """Draws one tile block. corner_offsets (see controls.tile_corner_offsets)
+    tilts its top face into a slope; its walls still reach down to the same
+    ground line, so they taper to follow the slope."""
     tile_width = TILE_WIDTH * zoom
     tile_height = TILE_HEIGHT * zoom
-    h_offset = (height * 14 + TILE_DEPTH_BASE) * zoom
-    top_points = [
-        (sx, sy),
-        (sx + tile_width / 2, sy + tile_height / 2),
-        (sx, sy + tile_height),
-        (sx - tile_width / 2, sy + tile_height / 2)
-    ]
+    rise = TILE_RISE * zoom
+    h_offset = (height * TILE_RISE + TILE_DEPTH_BASE) * zoom
+    top_points = tile_top_points(sx, sy, zoom, corner_offsets)
+    ground_points = [(px, py + offset * rise + h_offset) for (px, py), offset in zip(top_points, corner_offsets)]
     wall_base = wall_color if wall_color is not None else color
-    left_wall = [top_points[3], top_points[2], (top_points[2][0], top_points[2][1] + h_offset), (top_points[3][0], top_points[3][1] + h_offset)]
+    left_wall = [top_points[3], top_points[2], ground_points[2], ground_points[3]]
     pygame.draw.polygon(surface, (int(wall_base[0]*0.5), int(wall_base[1]*0.5), int(wall_base[2]*0.5)), left_wall)
-    right_wall = [top_points[2], top_points[1], (top_points[1][0], top_points[1][1] + h_offset), (top_points[2][0], top_points[2][1] + h_offset)]
+    right_wall = [top_points[2], top_points[1], ground_points[1], ground_points[2]]
     pygame.draw.polygon(surface, (int(wall_base[0]*0.7), int(wall_base[1]*0.7), int(wall_base[2]*0.7)), right_wall)
 
-    if terrain_image:
+    if terrain_image and corner_offsets != FLAT_CORNER_OFFSETS:
+        size = (round(tile_width), round(tile_height))
+        cache_key = (id(terrain_image), size, round(rise, 3), tuple(corner_offsets))
+        image = _slope_texture_cache.get(cache_key)
+        if image is None:
+            image = build_slope_texture(terrain_image, size[0], size[1], rise, corner_offsets)
+            _slope_texture_cache[cache_key] = image
+        surface.blit(image, (round(sx - tile_width / 2), round(sy - rise / 2)))
+    elif terrain_image:
         image = pygame.transform.smoothscale(terrain_image, (round(tile_width), round(tile_height)))
         surface.blit(image, (round(sx - tile_width / 2), round(sy)))
     else:
@@ -1017,8 +1093,43 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
         pygame.draw.polygon(surface, (255, 60, 60), [(cx, marker_y), (cx - 5, marker_y - 7), (cx + 5, marker_y - 7)])
 
 
+# A prop's footprint, as a fraction of the tile it stands on, and how much
+# taller than its stated map height it is drawn. Unit standees are already
+# drawn well out of scale with the map's own height units (see
+# UNIT_ART_SCALE), so a tree drawn at exactly its map height reads as a
+# shrub beside them - this lifts it back to a believable tree. Only the
+# drawing is exaggerated: the prop's height in the map data is what the
+# game rules and the map editor go by.
+PROP_ART_SCALE = 1.9
+
+# Each prop type's sprite builder, footprint (as a fraction of the tile's
+# width) and how far below the tile's center its base sits - a tree's trunk
+# is planted dead center, while a boulder's sprite bottoms out at the front
+# corner of its diamond footprint, a quarter of its width below center
+# (0.72 * TILE_WIDTH / 4 / TILE_HEIGHT - 0.5 = 0.36 - 0.5 + 0.5).
+PROP_ART = {
+    "tree": (build_tree_sprite, 0.62, 0.0),
+    "boulder": (build_boulder_sprite, 0.72, 0.36),
+}
+
+
+def draw_prop(surface, sx, sy, prop, zoom=1.0):
+    """Draws a prop standing on the tile whose top corner is at (sx, sy),
+    planted at the middle of that tile and its height scaled from the
+    prop's own map height, so a taller prop really does stand taller on
+    the board."""
+    build_sprite, width_fill, sink = PROP_ART[prop["prop"]]
+    sprite_height = max(1, round(prop["height"] * TILE_RISE * zoom * PROP_ART_SCALE))
+    sprite_width = max(1, round(TILE_WIDTH * zoom * width_fill))
+    # Seeded per tile so each prop's outline sits a little differently, and
+    # so the same prop looks the same every frame.
+    sprite = build_sprite(sprite_width, sprite_height, seed=prop["x"] * 31 + prop["y"])
+    base_x, base_y = sx, sy + TILE_HEIGHT * zoom * (0.5 + sink)
+    surface.blit(sprite, (round(base_x - sprite_width / 2), round(base_y - sprite_height)))
+
+
 async def main(stage=None, equipment_loadout=None, book_loadout=None):
-    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, EQUIPMENT_REGISTRY, BOOK_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT
+    global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, EQUIPMENT_REGISTRY, BOOK_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT, MAP_PROPS, PROP_TILES
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     if stage is None:
@@ -1080,6 +1191,13 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
         theme = STAGE_THEMES.get(stage.get("node_id")) if stage else None
         weights = TERRAIN_THEMES.get(theme)
         TERRAIN_LAYOUT = load_terrain_from_text(generate_terrain_csv(MAP_ROWS, MAP_COLS, weights=weights))
+    # A stage's scenery lives next to its other data files, like the map
+    # editor's map_layers.csv does, rather than as another stages.csv column.
+    props_path = os.path.join(os.path.dirname(stage["characters"]), "props.csv") if stage else None
+    MAP_PROPS = load_props_from_csv(props_path)
+    PROP_TILES = {(prop["x"], prop["y"]) for prop in MAP_PROPS}
+    props_by_tile = {(prop["x"], prop["y"]): prop for prop in MAP_PROPS}
+
     settings = load_settings_from_csv()
     background_path = settings.get("background_path", "").strip()
     if not background_path:
@@ -1776,7 +1894,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
         for x, y in get_render_order(MAP_COLS, MAP_ROWS, rotation):
             z = MAP_DATA[y][x]
             sx, sy = iso_to_screen(x, y, z, origin_x, origin_y, rotation, MAP_COLS, MAP_ROWS, map_zoom)
-            base_val = 90 + (z * 22)
+            corner_offsets = tile_corner_offsets(MAP_DATA, x, y, rotation)
+            base_val = round(90 + (z * 22))
             tile_color = [base_val, base_val, base_val]
             if game_state == "MOVE_SELECT" and (x, y) in valid_tiles:
                 tile_color = [40, 110, 190]
@@ -1790,17 +1909,16 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
                 terrain_path = TERRAIN_LAYOUT[y][x]
             terrain_image = terrain_image_cache.get(terrain_path)
             if terrain_image and terrain_path.lower().endswith("stone.png"):
-                pygame.draw.polygon(screen, (125, 130, 142), [
-                    (sx, sy),
-                    (sx + TILE_WIDTH // 2, sy + TILE_HEIGHT // 2),
-                    (sx, sy + TILE_HEIGHT),
-                    (sx - TILE_WIDTH // 2, sy + TILE_HEIGHT // 2),
-                ])
+                pygame.draw.polygon(screen, (125, 130, 142), tile_top_points(sx, sy, 1.0, corner_offsets))
             wall_color = terrain_color_cache.get(terrain_path)
-            top_pts = draw_iso_tile(screen, sx, sy, z, tuple(tile_color), terrain_image, map_zoom, wall_color=wall_color)
+            top_pts = draw_iso_tile(screen, sx, sy, z, tuple(tile_color), terrain_image, map_zoom, wall_color=wall_color, corner_offsets=corner_offsets)
             if game_state == "MOVE_SELECT" and (x, y) in valid_tiles:
                 pygame.draw.polygon(screen, (30, 120, 255), top_pts)
                 pygame.draw.polygon(screen, (255, 255, 255), top_pts, 2)
+
+            prop = props_by_tile.get((x, y))
+            if prop:
+                draw_prop(screen, sx, sy, prop, map_zoom)
 
             for u in units:
                 if u.x != x or u.y != y:
@@ -1927,7 +2045,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
             overlay.fill((0, 0, 0, 120))
             screen.blit(overlay, (0, 0))
             speaker, text = dialogue_lines[dialogue_index]
-            draw_dialogue_window(screen, font, speaker, text, ui_frame)
+            draw_dialogue_window(screen, speaker, text, ui_frame)
 
         pygame.display.flip()
         clock.tick(60)
@@ -1947,7 +2065,18 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
     }
 
 
+FIRST_STAGE_NODE = "jerusalem"
+
+
+async def run_first_stage():
+    """Boots straight into the first stage's battle, skipping the world
+    map. The world map (scripts/world_map.py) still works and is still
+    reachable by running that module - the game's entrypoints just don't
+    route through it while it's hidden."""
+    return await main(load_stage_manifest().get(FIRST_STAGE_NODE))
+
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(run_first_stage())
     pygame.quit()
     sys.exit()

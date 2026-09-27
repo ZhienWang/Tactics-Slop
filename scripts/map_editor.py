@@ -28,7 +28,7 @@ import os
 import random
 import pygame
 
-from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT, CURSOR_COLOR
+from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_HEIGHT, CURSOR_COLOR
 from scripts.data_editor import (
     DATA_DIR,
     TERRAIN_TILE_PATHS,
@@ -44,10 +44,11 @@ from scripts.data_editor import (
     save_terrain_layout_csv,
     load_characters_from_csv,
     update_character_positions_csv,
+    normalize_height,
 )
 from scripts.assets import load_image_safe, cache_terrain_colors, bring_window_to_front, get_font
 from scripts.game_logic import iso_to_screen, draw_iso_tile, get_render_order
-from scripts.controls import point_in_polygon
+from scripts.controls import point_in_polygon, tile_corner_offsets, tile_top_points
 
 PALETTE = TERRAIN_TILE_PATHS + [WATER_TILE_PATH]
 
@@ -65,6 +66,9 @@ MIN_MAP_SIZE = 2
 MAX_MAP_SIZE = 40
 MAX_HEIGHT = 10
 ADD_LAYER_GAP = 2
+# Holding Shift turns every height control into this smaller step - how a
+# slope tile (a 0.5, 1.5, ... height) gets authored.
+SLOPE_HEIGHT_STEP = 0.5
 DEFAULT_TERRAIN = "assets/grass.jpg"
 
 TOOLS = ["paint", "add", "remove", "units"]
@@ -157,6 +161,17 @@ def topmost(tiles, x, y):
     return column[-1]["z"] if column else 0
 
 
+def topmost_grid(tiles, rows, cols):
+    """Every column's topmost height as a dense [row][col] grid - the shape
+    controls.tile_corner_offsets reads neighbor heights from to decide
+    which way a slope tile tilts."""
+    return [[topmost(tiles, x, y) for x in range(cols)] for y in range(rows)]
+
+
+def height_step():
+    return SLOPE_HEIGHT_STEP if pygame.key.get_mods() & pygame.KMOD_SHIFT else 1
+
+
 def hit_test(mx, my, origin_x, origin_y, tiles, rows, cols, rotation, zoom):
     """Which column the screen point (mx, my) is over, preferring whichever
     tile is drawn frontmost. get_render_order sorts back-to-front for
@@ -167,16 +182,11 @@ def hit_test(mx, my, origin_x, origin_y, tiles, rows, cols, rotation, zoom):
     maps, but a tall stacked/bridge tile's polygon can shift far enough
     up-screen to overlap a neighboring cell, so row-major "last wins" often
     grabs the wrong column."""
+    heights = topmost_grid(tiles, rows, cols)
     for x, y in reversed(get_render_order(cols, rows, rotation)):
-        z = topmost(tiles, x, y)
+        z = heights[y][x]
         sx, sy = iso_to_screen(x, y, z, origin_x, origin_y, rotation, cols, rows, zoom)
-        tile_width, tile_height = TILE_WIDTH * zoom, TILE_HEIGHT * zoom
-        top_points = [
-            (sx, sy),
-            (sx + tile_width / 2, sy + tile_height / 2),
-            (sx, sy + tile_height),
-            (sx - tile_width / 2, sy + tile_height / 2),
-        ]
+        top_points = tile_top_points(sx, sy, zoom, tile_corner_offsets(heights, x, y, rotation))
         if point_in_polygon((mx, my), top_points):
             return (x, y)
     return None
@@ -506,7 +516,7 @@ def draw_status_bar(surface, font, state):
     pygame.draw.rect(surface, PANEL_BORDER, panel, 1)
     hint = (
         f"Tool: {state['tool']}   Brush: {os.path.basename(state['brush_terrain'])}   "
-        "Click: use tool   Wheel/+-: height   Ctrl+Z/Y: undo/redo   WASD pan   Q/E rotate   Z/X zoom   Esc: quit"
+        "Click: use tool   Wheel/+-: height (Shift: half step = slope)   Ctrl+Z/Y: undo/redo   WASD pan   Q/E rotate   Z/X zoom   Esc: quit"
     )
     surface.blit(font.render(hint, True, TEXT_DIM), (10, panel.y + 4))
     if state["status_message"]:
@@ -536,7 +546,7 @@ def adjust_height(state, x, y, delta):
     column = state["tiles"].get((x, y))
     if not column:
         return
-    column[-1]["z"] = max(0, min(MAX_HEIGHT, column[-1]["z"] + delta))
+    column[-1]["z"] = normalize_height(max(0, min(MAX_HEIGHT, column[-1]["z"] + delta)))
     column.sort(key=lambda t: t["z"])
 
 
@@ -691,10 +701,10 @@ def main():
                     state["tool"] = "units"
                 elif event.key in (pygame.K_PLUS, pygame.K_EQUALS) and state["hovered"]:
                     push_undo(state)
-                    adjust_height(state, *state["hovered"], 1)
+                    adjust_height(state, *state["hovered"], height_step())
                 elif event.key == pygame.K_MINUS and state["hovered"]:
                     push_undo(state)
-                    adjust_height(state, *state["hovered"], -1)
+                    adjust_height(state, *state["hovered"], -height_step())
 
             elif event.type == pygame.MOUSEMOTION:
                 # Only update on canvas motion - moving the mouse onto the
@@ -714,12 +724,12 @@ def main():
                 # real scroll wheel is likely to fire.
                 if event.y != 0:
                     push_undo(state)
-                    adjust_height(state, *state["hovered"], 1 if event.y > 0 else -1)
+                    adjust_height(state, *state["hovered"], height_step() if event.y > 0 else -height_step())
 
             elif event.type == pygame.MOUSEBUTTONDOWN and prompt is None and not show_stage_picker:
                 if event.button in (4, 5) and state["hovered"]:
                     push_undo(state)
-                    adjust_height(state, *state["hovered"], 1 if event.button == 4 else -1)
+                    adjust_height(state, *state["hovered"], height_step() if event.button == 4 else -height_step())
                     continue
                 if event.button != 1:
                     continue
@@ -739,11 +749,11 @@ def main():
                     minus_rect, plus_rect = height_button_layout()
                     if state["hovered"] and minus_rect.collidepoint(event.pos):
                         push_undo(state)
-                        adjust_height(state, *state["hovered"], -1)
+                        adjust_height(state, *state["hovered"], -height_step())
                         continue
                     if state["hovered"] and plus_rect.collidepoint(event.pos):
                         push_undo(state)
-                        adjust_height(state, *state["hovered"], 1)
+                        adjust_height(state, *state["hovered"], height_step())
                         continue
                     action_labels, action_rects = action_button_layout()
                     action_hit = next((i for i, r in enumerate(action_rects) if r.collidepoint(event.pos)), None)
@@ -804,6 +814,7 @@ def main():
 
         # --- DRAW ---
         screen.blit(canvas_bg, (0, 0))
+        heights = topmost_grid(state["tiles"], state["rows"], state["cols"])
         for x, y in get_render_order(state["cols"], state["rows"], rotation):
             column = state["tiles"].get((x, y))
             if not column:
@@ -823,7 +834,8 @@ def main():
                 # the minimum TILE_DEPTH_BASE plank thickness, but nothing
                 # more, leaving the gap visibly empty underneath.
                 wall_height = tile["z"] if tile is column[0] else 0
-                top_points = draw_iso_tile(screen, sx, sy, wall_height, wall_color, image, zoom, wall_color=wall_color)
+                corner_offsets = tile_corner_offsets(heights, x, y, rotation, height=tile["z"])
+                top_points = draw_iso_tile(screen, sx, sy, wall_height, wall_color, image, zoom, wall_color=wall_color, corner_offsets=corner_offsets)
                 if tile is column[-1]:
                     label = font.render(str(tile["z"]), True, (20, 20, 20))
                     center = (sum(p[0] for p in top_points) / 4, sum(p[1] for p in top_points) / 4)

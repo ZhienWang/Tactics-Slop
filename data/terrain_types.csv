@@ -1,0 +1,10 @@
+code,name,asset
+G,grass,assets/grass.jpg
+S,sand,assets/sand.png
+W,water,assets/water.png
+D,dirt,assets/dirt.png
+R,stone,assets/stone.png
+C,cobblestone,assets/cobblestone.png
+M,moss,assets/moss.png
+N,snow,assets/snow.png
+P,wood,assets/wood.png

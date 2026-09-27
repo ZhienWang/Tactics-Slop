@@ -1,5 +1,7 @@
+import math
 import os
 import sys
+import random
 import pygame
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT
 
@@ -184,6 +186,127 @@ def draw_tile_texture(surface, top_points, height, color):
         pygame.draw.circle(surface, pattern_color, (int(cx), int(cy + 2)), 3)
 
 
+TRUNK_COLOR = (104, 68, 40)
+TRUNK_SHADE_COLOR = (74, 47, 27)
+# Three canopy tones, lit from above like the tiles' own shading (their top
+# face full brightness, the +rx-facing wall 0.7, the +ry-facing one 0.5).
+CANOPY_COLORS = [(58, 104, 48), (74, 132, 58), (104, 168, 74)]
+_tree_sprite_cache = {}
+
+
+def build_tree_sprite(width, height, seed=0):
+    """A simple standing tree: a trunk under three stacked canopy blobs,
+    drawn from scratch in the same flat-shaded style as the terrain tile
+    art (no tree texture ships with the game). `height` is the full sprite
+    height in pixels; callers size it from the prop's map height so a
+    3-height tree really does stand three height units above its tile.
+    Cached, since this is called every frame for every prop on the map."""
+    cache_key = (width, height, seed)
+    if cache_key in _tree_sprite_cache:
+        return _tree_sprite_cache[cache_key]
+
+    rng = random.Random(seed)
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    trunk_width = max(3, round(width * 0.16))
+    trunk_height = round(height * 0.34)
+    trunk_x = (width - trunk_width) // 2
+    trunk_y = height - trunk_height
+    pygame.draw.rect(surface, TRUNK_SHADE_COLOR, (trunk_x, trunk_y, trunk_width, trunk_height))
+    pygame.draw.rect(surface, TRUNK_COLOR, (trunk_x, trunk_y, max(1, round(trunk_width * 0.55)), trunk_height))
+
+    # Widest blob at the base of the canopy, narrowing toward the crown, each
+    # one nudged sideways a little so no two trees are identical.
+    canopy_height = height - trunk_height
+    for index, (center_frac, width_frac) in enumerate([(0.78, 1.0), (0.5, 0.86), (0.22, 0.62)]):
+        blob_width = max(4, round(width * width_frac))
+        blob_height = max(4, round(canopy_height * 0.52))
+        drift = rng.randint(-1, 1) * max(1, round(width * 0.04))
+        center_x = width // 2 + drift
+        center_y = round(canopy_height * center_frac)
+        rect = pygame.Rect(0, 0, blob_width, blob_height)
+        rect.center = (center_x, center_y)
+        pygame.draw.ellipse(surface, CANOPY_COLORS[0], rect)
+        lit = rect.inflate(-round(blob_width * 0.22), -round(blob_height * 0.3))
+        lit.move_ip(-round(blob_width * 0.06), -round(blob_height * 0.12))
+        pygame.draw.ellipse(surface, CANOPY_COLORS[1], lit)
+        if index == 2:
+            crown = lit.inflate(-round(blob_width * 0.4), -round(blob_height * 0.4))
+            pygame.draw.ellipse(surface, CANOPY_COLORS[2], crown)
+
+    _tree_sprite_cache[cache_key] = surface
+    return surface
+
+
+# Rock tones, lit from above-left like the canopy: the shaded right face,
+# the lit left face, the top, a brighter chiseled facet on the top, and the
+# dark edge line that picks the facets out from one another.
+BOULDER_COLORS = [(84, 80, 76), (122, 117, 110), (152, 147, 138), (178, 173, 163), (52, 49, 46)]
+_boulder_sprite_cache = {}
+
+
+def build_boulder_sprite(width, height, seed=0):
+    """A blocky, faceted rock in the style of Final Fantasy Tactics: its
+    base follows the lower two edges of the isometric tile diamond so it
+    sits square on its tile, straight walls rise from there (lit left face,
+    shaded right face), and an irregular chiseled crown caps it. The bottom
+    point of the sprite is the tile diamond's front corner of the rock's
+    footprint. Seeded so each rock's crown differs but stays stable frame
+    to frame. Cached."""
+    cache_key = (width, height, seed)
+    if cache_key in _boulder_sprite_cache:
+        return _boulder_sprite_cache[cache_key]
+
+    rng = random.Random(seed)
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    right, bottom = width - 1, height - 1
+    center_x = right / 2
+    # The footprint diamond is half as tall as it is wide, like the tiles.
+    diamond_drop = width / 4
+    side_y = bottom - diamond_drop
+    # Wall heights: whatever the sprite has left once the top face (a full
+    # diamond, twice diamond_drop tall) is reserved. The side corners come
+    # out a little uneven so the block doesn't read as a perfect cube.
+    wall = max(2.0, bottom - diamond_drop * 2)
+    front_top = bottom - wall * rng.uniform(0.9, 1.0)
+    left_top = side_y - wall * rng.uniform(0.75, 0.95)
+    right_top = side_y - wall * rng.uniform(0.7, 0.9)
+
+    base_left, base_front, base_right = (0, side_y), (center_x, bottom), (right, side_y)
+    wall_left, wall_front, wall_right = (0, left_top), (center_x, front_top), (right, right_top)
+
+    # The crown: the back half of a slightly tilted, uneven top face - the
+    # back corners of the footprint diamond lifted a little off true, so the
+    # top reads as a flat-ish slab of chiseled stone rather than a roof.
+    back_y = front_top - diamond_drop * 2
+    crown = [
+        (right * rng.uniform(0.84, 0.92), right_top - diamond_drop * rng.uniform(0.7, 0.95)),
+        (center_x + right * rng.uniform(0.02, 0.1), back_y + rng.uniform(-1, 2)),
+        (center_x - right * rng.uniform(0.06, 0.14), back_y + rng.uniform(0, 3)),
+        (right * rng.uniform(0.08, 0.16), left_top - diamond_drop * rng.uniform(0.7, 0.95)),
+    ]
+    crown = [(x, max(0, y)) for x, y in crown]
+
+    left_face = [base_left, base_front, wall_front, wall_left]
+    right_face = [base_front, base_right, wall_right, wall_front]
+    top = [wall_left, wall_front, wall_right] + crown
+    # A brighter facet on the sunlit side of the crown: from the front edge
+    # back to the peak and down the left shoulder.
+    facet = [wall_front, crown[2], crown[3], wall_left]
+
+    pygame.draw.polygon(surface, BOULDER_COLORS[0], right_face)
+    pygame.draw.polygon(surface, BOULDER_COLORS[1], left_face)
+    pygame.draw.polygon(surface, BOULDER_COLORS[2], top)
+    pygame.draw.polygon(surface, BOULDER_COLORS[3], facet)
+
+    edge = BOULDER_COLORS[4]
+    pygame.draw.lines(surface, edge, True, [base_left, base_front, base_right, wall_right] + crown + [wall_left])
+    pygame.draw.line(surface, edge, base_front, wall_front)
+    pygame.draw.lines(surface, edge, False, [wall_left, wall_front, wall_right])
+
+    _boulder_sprite_cache[cache_key] = surface
+    return surface
+
+
 def load_background_image(background_path, invalid_assets):
     if not background_path:
         return None
@@ -227,6 +350,30 @@ def average_tile_color(image):
     return tiny.get_at((0, 0))[:3]
 
 
+def terrain_top_face(image):
+    """Just the diamond top face of a terrain tile sprite, with its baked-in
+    side edges cut away. Every terrain texture is drawn as a small isometric
+    slab - a top face over two darker side faces - so the silhouette's full
+    height is the top face plus the slab's thickness, and the thickness is
+    how tall the silhouette is at its outer edge. Slope tiles texture their
+    ramp with this: shearing the whole slab, sides and all, reads as a
+    tilted block sitting on the hill rather than a ramp."""
+    mask = pygame.mask.from_surface(image)
+    bounds = mask.get_bounding_rects()
+    if not bounds:
+        return image
+    rect = bounds[0].unionall(bounds[1:])
+    edge_x = min(rect.left + 2, rect.right - 1)
+    edge_rows = [y for y in range(rect.top, rect.bottom) if mask.get_at((edge_x, y))]
+    thickness = edge_rows[-1] - edge_rows[0] if edge_rows else 0
+    face = image.subsurface((rect.left, rect.top, rect.width, max(1, rect.height - thickness))).copy()
+    width, height = face.get_size()
+    diamond = pygame.Surface((width, height), pygame.SRCALPHA)
+    pygame.draw.polygon(diamond, (255, 255, 255, 255), [(width / 2, 0), (width, height / 2), (width / 2, height), (0, height / 2)])
+    face.blit(diamond, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return face
+
+
 def cache_terrain_colors(terrain_image_cache):
     return {
         path: average_tile_color(image)
@@ -245,7 +392,10 @@ def build_character_portraits(units, invalid_assets):
                 gold_tint.fill((255, 190, 40, 255))
                 portrait_img = portrait_img.copy()
                 portrait_img.blit(gold_tint, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            portraits[u.name] = pygame.transform.smoothscale(portrait_img, (140, 70))
+            # 2:1 like every unit image; kept at twice the 140x70 map slot
+            # so the refined unit art (assets/unit_art.py) stays crisp when
+            # the map is zoomed in.
+            portraits[u.name] = pygame.transform.smoothscale(portrait_img, (280, 140))
         else:
             portraits[u.name] = create_portrait_surface(u.color, u.name)
     return portraits

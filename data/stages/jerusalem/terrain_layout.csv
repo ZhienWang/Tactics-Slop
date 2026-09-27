@@ -1,8 +1,8 @@
-assets/grass.jpg,assets/sand.png,assets/water.png,assets/sand.png,assets/water.png,assets/sand.png,assets/grass.jpg,assets/sand.png
-assets/sand.png,assets/grass.jpg,assets/dirt.png,assets/water.png,assets/dirt.png,assets/water.png,assets/sand.png,assets/grass.jpg
-assets/grass.jpg,assets/water.png,assets/sand.png,assets/grass.jpg,assets/water.png,assets/dirt.png,assets/water.png,assets/sand.png
-assets/dirt.png,assets/grass.jpg,assets/water.png,assets/sand.png,assets/grass.jpg,assets/water.png,assets/dirt.png,assets/water.png
-assets/grass.jpg,assets/dirt.png,assets/grass.jpg,assets/dirt.png,assets/sand.png,assets/grass.jpg,assets/sand.png,assets/grass.jpg
-assets/water.png,assets/grass.jpg,assets/water.png,assets/sand.png,assets/grass.jpg,assets/sand.png,assets/grass.jpg,assets/water.png
-assets/dirt.png,assets/sand.png,assets/grass.jpg,assets/water.png,assets/sand.png,assets/grass.jpg,assets/sand.png,assets/grass.jpg
-assets/grass.jpg,assets/water.png,assets/grass.jpg,assets/grass.jpg,assets/water.png,assets/grass.jpg,assets/grass.jpg,assets/grass.jpg
+G,S,W,S,W,S,G,S
+S,G,D,W,W,W,S,G
+G,S,S,G,W,D,W,S
+D,G,G,S,G,W,D,G
+W,D,G,D,S,G,S,D
+W,W,W,S,G,S,G,S
+W,S,G,W,W,G,S,W
+G,W,G,G,W,G,S,W

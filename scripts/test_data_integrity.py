@@ -28,6 +28,9 @@ from scripts.data_editor import (
     TERRAIN_TILE_WEIGHTS,
     load_map_from_csv,
     load_terrain_from_csv,
+    load_terrain_types,
+    TERRAIN_TILE_PATHS,
+    WATER_TILE_PATH,
     load_map_layers_csv,
     save_map_layers_csv,
     dense_grids_to_tiles,
@@ -139,8 +142,7 @@ def test_stage_theme_matches_that_stage_actual_saved_terrain():
         terrain_path = os.path.join(DATA_DIR, "stages", stage_id, "terrain_layout.csv")
         if not os.path.exists(terrain_path):
             continue
-        with open(terrain_path) as f:
-            used_tiles = {tile for row in f.read().strip().splitlines() for tile in row.split(",")}
+        used_tiles = {tile for row in load_terrain_from_csv(terrain_path) for tile in row}
         theme_tiles = set(TERRAIN_THEMES[theme].keys())
         assert used_tiles <= theme_tiles, (
             f"{stage_id}'s saved terrain uses {used_tiles - theme_tiles}, "
@@ -432,6 +434,28 @@ def test_save_map_layout_and_terrain_csv_are_readable_by_the_normal_loaders(tmp_
 
     assert load_map_from_csv(str(map_path)) == map_grid
     assert load_terrain_from_csv(str(terrain_path)) == terrain_grid
+
+
+def test_terrain_codes_are_unique_single_letters_covering_every_tile():
+    terrain_types = load_terrain_types()
+    assert all(len(code) == 1 and code.isalpha() for code in terrain_types)
+    assert len(set(terrain_types.values())) == len(terrain_types), "two codes point at the same tile"
+    for path in TERRAIN_TILE_PATHS + [WATER_TILE_PATH]:
+        assert path in terrain_types.values(), f"{path} has no code in terrain_types.csv"
+        assert os.path.exists(os.path.join(os.path.dirname(DATA_DIR), path)), f"{path} is missing"
+
+
+def test_terrain_layout_csv_is_written_as_codes(tmp_path):
+    path = tmp_path / "terrain_layout.csv"
+    save_terrain_layout_csv(str(path), [["assets/grass.jpg", "assets/water.png"]])
+    assert path.read_text().strip() == "G,W"
+
+
+def test_an_unknown_terrain_code_names_the_cell(tmp_path):
+    path = tmp_path / "terrain_layout.csv"
+    path.write_text("G,G\nG,Q\n")
+    with pytest.raises(ValueError, match="'Q' at x=1, y=1"):
+        load_terrain_from_csv(str(path))
 
 
 def test_update_character_positions_csv_only_touches_x_and_y(tmp_path):

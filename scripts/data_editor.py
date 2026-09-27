@@ -183,8 +183,7 @@ def generate_dummy_csv_files():
     with open(os.path.join(DATA_DIR, "characters.csv"), "w", newline="") as f:
         f.write(CHARACTERS_CSV_DUMMY.strip())
 
-    with open(os.path.join(DATA_DIR, "terrain_layout.csv"), "w", newline="") as f:
-        f.write(generate_terrain_csv())
+    save_terrain_layout_csv(os.path.join(DATA_DIR, "terrain_layout.csv"), load_terrain_from_text(generate_terrain_csv()))
 
     with open(os.path.join(DATA_DIR, "game_settings.csv"), "w", newline="") as f:
         f.write(GAME_SETTINGS_CSV_DUMMY.strip())
@@ -203,15 +202,25 @@ def generate_dummy_csv_files():
 
 # --- 2. THE CSV PARSING PIPELINE ---
 
+def normalize_height(value):
+    """A tile height snapped to the nearest half step. Whole heights come
+    back as ints, so existing all-integer maps load and save exactly as
+    before; a .5 height stays a float and is drawn as a slope tile ramping
+    between its lower and higher neighbors (see controls.slope_uphill_direction)."""
+    height = round(float(value) * 2) / 2
+    return int(height) if height.is_integer() else height
+
+
 def load_map_from_csv(filepath=None):
-    """Reads a grid of integers representing height tiles."""
+    """Reads a grid of tile heights - whole numbers, or half steps (0.5,
+    1.5, ...) for slopes."""
     map_grid = []
     filepath = filepath or os.path.join(DATA_DIR, "map_layout.csv")
     with open(filepath, "r") as f:
         reader = csv.reader(f)
         for row in reader:
             if row: # Skip empty lines
-                map_grid.append([int(tile) for tile in row])
+                map_grid.append([normalize_height(tile) for tile in row])
     return map_grid
 
 
@@ -325,15 +334,34 @@ def load_books_from_csv(filepath=None):
     return books_registry
 
 
-def load_terrain_from_csv(filepath=None):
-    """Parses terrain tile image paths from a CSV grid."""
+def load_terrain_types(filepath=None):
+    """Parses the terrain lookup (code, name, asset) that terrain_layout.csv
+    files are written in terms of - each cell is a single-letter code, so
+    the layouts stay readable as a grid. Returns {code: asset path}."""
+    filepath = filepath or os.path.join(DATA_DIR, "terrain_types.csv")
+    with open(filepath, "r", newline="") as f:
+        return {row["code"].strip(): row["asset"].strip() for row in csv.DictReader(f)}
+
+
+def load_terrain_from_csv(filepath=None, terrain_types=None):
+    """Parses a grid of terrain codes, resolved to their tile image paths
+    through terrain_types.csv. An unknown code fails loudly, naming the
+    cell, rather than silently drawing a missing texture."""
+    terrain_types = terrain_types or load_terrain_types()
     terrain_grid = []
     filepath = filepath or os.path.join(DATA_DIR, "terrain_layout.csv")
     with open(filepath, "r") as f:
         reader = csv.reader(f)
-        for row in reader:
-            if row:
-                terrain_grid.append([cell.strip() for cell in row])
+        for y, row in enumerate(reader):
+            if not row:
+                continue
+            grid_row = []
+            for x, cell in enumerate(row):
+                code = cell.strip()
+                if code not in terrain_types:
+                    raise ValueError(f"{filepath}: unknown terrain code {code!r} at x={x}, y={y}")
+                grid_row.append(terrain_types[code])
+            terrain_grid.append(grid_row)
     return terrain_grid
 
 
@@ -364,10 +392,33 @@ def load_map_layers_csv(filepath=None):
             tiles.append({
                 "x": int(row["x"]),
                 "y": int(row["y"]),
-                "z": int(row["z"]),
+                "z": normalize_height(row["z"]),
                 "terrain": row["terrain"].strip(),
             })
     return tiles
+
+
+def load_props_from_csv(filepath=None):
+    """Parses a stage's scenery props - trees so far - as {x, y, prop,
+    height}, where height is how many map height units tall the prop
+    stands. A prop owns its whole tile: nothing can walk onto it. Most
+    stages have no props, so a missing file just means "no scenery here"
+    and returns an empty list rather than raising, matching
+    load_map_layers_csv's tolerance."""
+    filepath = filepath or os.path.join(DATA_DIR, "props.csv")
+    if not os.path.exists(filepath):
+        return []
+    props = []
+    with open(filepath, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            props.append({
+                "x": int(row["x"]),
+                "y": int(row["y"]),
+                "prop": row["prop"].strip(),
+                "height": normalize_height(row["height"]),
+            })
+    return props
 
 
 def save_map_layers_csv(filepath, tiles):
@@ -425,13 +476,17 @@ def save_map_layout_csv(filepath, map_grid):
             writer.writerow(row)
 
 
-def save_terrain_layout_csv(filepath, terrain_grid):
+def save_terrain_layout_csv(filepath, terrain_grid, terrain_types=None):
     """Writes a dense terrain-texture grid in the same format
-    load_terrain_from_csv reads."""
+    load_terrain_from_csv reads - each tile path as its terrain code."""
+    codes = {asset: code for code, asset in (terrain_types or load_terrain_types()).items()}
+    missing = {path for row in terrain_grid for path in row if path not in codes}
+    if missing:
+        raise ValueError(f"no terrain code in terrain_types.csv for {sorted(missing)}")
     with open(filepath, "w", newline="") as f:
         writer = csv.writer(f)
         for row in terrain_grid:
-            writer.writerow(row)
+            writer.writerow([codes[path] for path in row])
 
 
 def load_settings_from_csv(filepath=None):
