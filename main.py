@@ -5,14 +5,22 @@ inside the packaged bundle, so this file must exist at the project root
 under this exact name for the web build to actually start. Mirrors
 fftr.py, the desktop entrypoint - including the world map being hidden
 for now (see fftr.py).
+
+Build the web version with tools/build_web.py.
 """
-import sys
 import asyncio
 import pygame
 from scripts.game_logic import run_first_stage
 
 
-if __name__ == '__main__':
-    asyncio.run(run_first_stage())
+async def main():
+    await run_first_stage()
+    # Shut pygame down only once the game is actually over. In the browser
+    # asyncio.run() returns immediately (the game keeps running on the
+    # page's event loop), so cleanup placed *after* asyncio.run() - as the
+    # desktop entrypoint can - would tear pygame down before the first frame.
     pygame.quit()
-    sys.exit()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

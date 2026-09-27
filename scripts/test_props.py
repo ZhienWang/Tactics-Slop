@@ -101,3 +101,39 @@ def test_stage_props_stand_on_solid_ground_nobody_starts_on(path):
         assert not is_water_tile(terrain[y][x]), f"{prop} in {stage_dir} is standing in water"
         assert prop["prop"] in game_logic.PROP_ART, f"{prop} in {stage_dir} has no art to draw it with"
         assert prop["height"] >= MIN_PROP_HEIGHT[prop["prop"]], f"{prop} in {stage_dir} is too short for a {prop['prop']}"
+
+
+# --- Map lighting ---
+
+def test_lighting_is_deterministic_per_map():
+    from scripts.game_logic import compute_tile_lighting
+    layout = [[0, 1, 0], [0, 0, 2], [1, 0, 0]]
+    assert compute_tile_lighting(layout) == compute_tile_lighting(layout)
+
+
+def test_taller_neighbor_on_the_sun_side_casts_shadow():
+    import scripts.game_logic as game_logic
+    flat = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    walled = [[0, 0, 0], [0, 0, 3], [0, 0, 0]]
+    # (2, 1) is the sunward (+x) neighbor of (1, 1). Compare without the
+    # random sun-patches, which differ between the two layouts.
+    original = game_logic.random.Random
+    try:
+        game_logic.random.Random = lambda seed: original(0)
+        assert game_logic.compute_tile_lighting(walled)[(1, 1)] < game_logic.compute_tile_lighting(flat)[(1, 1)]
+    finally:
+        game_logic.random.Random = original
+
+
+def test_prop_casts_shadow_on_its_neighbor():
+    import scripts.game_logic as game_logic
+    flat = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    tree = {(2, 1): {"x": 2, "y": 1, "prop": "tree", "height": 3}}
+    assert game_logic.compute_tile_lighting(flat, tree)[(1, 1)] < game_logic.compute_tile_lighting(flat)[(1, 1)]
+
+
+def test_lighting_stays_within_bounds():
+    import scripts.game_logic as game_logic
+    layout = [[z % 4 for z in range(row, row + 8)] for row in range(8)]
+    for light in game_logic.compute_tile_lighting(layout).values():
+        assert game_logic.LIGHT_MIN <= light <= game_logic.LIGHT_MAX

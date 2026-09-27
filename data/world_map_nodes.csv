@@ -1,5 +1,6 @@
 node_id,name,x,y,type,connections,start
-jerusalem,Jerusalem,152,480,stage,caesarea,1
+damascus,Road to Damascus,330,300,stage,jerusalem,1
+jerusalem,Jerusalem,152,480,stage,damascus|caesarea,0
 caesarea,Caesarea,300,680,town,jerusalem|antioch,0
 antioch,Antioch,609,500,stage,caesarea|philippi|corinth,0
 philippi,Philippi,727,328,stage,antioch|troas,0

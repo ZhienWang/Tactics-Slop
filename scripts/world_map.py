@@ -26,7 +26,8 @@ from scripts.game_logic import Unit, main as run_battle
 # back to this hardcoded route (a small, mostly-linear path in the spirit of
 # the Super Mario World overworld) if that file is ever missing/malformed.
 _FALLBACK_NODES = {
-    "jerusalem": {"pos": (352, 320),  "name": "Jerusalem",  "type": "stage", "connections": ["caesarea"]},
+    "damascus":  {"pos": (330, 300),  "name": "Road to Damascus", "type": "stage", "connections": ["jerusalem"]},
+    "jerusalem": {"pos": (352, 320),  "name": "Jerusalem",  "type": "stage", "connections": ["damascus", "caesarea"]},
     "caesarea":  {"pos": (273, 570),  "name": "Caesarea",   "type": "town",  "connections": ["jerusalem", "antioch"]},
     "antioch":   {"pos": (609, 500),  "name": "Antioch",    "type": "stage", "connections": ["caesarea", "philippi", "corinth"]},
     "philippi":  {"pos": (727, 258),  "name": "Philippi",   "type": "stage", "connections": ["antioch", "troas"]},
@@ -40,7 +41,7 @@ try:
     if not NODES:
         raise ValueError("world_map_nodes.csv produced no nodes")
 except (OSError, ValueError, KeyError):
-    NODES, START_NODE = _FALLBACK_NODES, "jerusalem"
+    NODES, START_NODE = _FALLBACK_NODES, "damascus"
 NODE_CLICK_RADIUS = 26
 
 STATE_MAP = "MAP"
@@ -584,7 +585,8 @@ async def main():
     async def enter_battle(node_id):
         equipment_loadout = {u.name: dict(u.equipment) for u in units}
         book_loadout = {
-            u.name: {"books": dict(u.books), "turns": dict(u.book_turns), "gain": dict(u.book_gain)}
+            u.name: {"books": dict(u.books), "turns": dict(u.book_turns), "gain": dict(u.book_gain),
+                     "level": u.level, "exp": u.exp}
             for u in units
         }
         progress = await run_battle(stage=stage_manifest.get(node_id), equipment_loadout=equipment_loadout, book_loadout=book_loadout)
@@ -595,6 +597,8 @@ async def main():
                     u.books = p.get("books", u.books)
                     u.book_turns = p.get("turns", u.book_turns)
                     u.book_gain = p.get("gain", u.book_gain)
+                    u.level = p.get("level", u.level)
+                    u.exp = p.get("exp", u.exp)
         pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Tactics Engine: World Map")
 

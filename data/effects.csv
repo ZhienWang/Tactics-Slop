@@ -1,0 +1,72 @@
+name,category,pattern,shape,colors,count,duration,speed,size,radius,height,gravity,spin,glow,screen_flash,layers,description
+might_up,buff,rise,arrow_up,#ff7a3d|#ffb347|#ffd27a,32,3000,55,5,18,40,0,0,1,0,,Orange arrows climb the body - strength rising
+faith_up,buff,rise,arrow_up,#ffd84a|#fff3b0,32,3000,55,5,18,40,0,0,1,0,,Golden arrows rise - faith strengthened
+love_up,buff,rise,heart,#ff7aa8|#ffb3cc|#ff4f8b,30,3000,45,5,18,40,0,0,1,0,,Pink hearts float upward - Love increased
+guard_up,buff,glyph,shield,#6fb6ff|#bfe0ff,5,3000,0,14,18,40,0,0,1,0,,A blue shield sigil forms over the unit
+aegis_shield,buff,orbit,shield,#7cc4ff|#d6ecff,6,3000,0,5,22,26,0,160,1,0,guard_up,Small shields circle the unit around a shield sigil
+haste_wind,buff,spiral,spark,#7dffb0|#d4ffe4|#3ee88a,51,3000,40,4,20,40,0,420,0,0,,Green wind streaks corkscrew up - speed rising
+swift_feathers,buff,spiral,feather,#ffffff|#dff7ff,24,3000,30,5,22,40,0,300,0,0,,White feathers whirl upward - lightness of foot
+courage_aura,buff,orbit,glow,#ff9a3d|#ffcf5a,8,3000,0,4,22,20,0,200,1,0,,Warm flames circle the waist - courage kindled
+valor_burst,buff,fountain,star,#ffd84a|#ff7a3d|#ffffff,60,3000,150,4,20,40,260,360,1,0,,A fountain of gold and red stars - a surge of morale
+wisdom_glow,buff,orbit,rune,#b99bff|#e2d6ff,7,3000,0,5,20,34,0,140,1,0,,Violet runes circle the head - insight granted
+focus_converge,buff,converge,spark,#8fd3ff|#ffffff,49,3000,0,3,40,30,0,0,1,0,,Blue sparks draw in to the body - concentration
+regen_aura,buff,orbit,plus,#8cf28c|#d8ffd8,6,3000,0,4,20,18,0,150,1,0,,Green crosses circle slowly - ongoing restoration
+barrier_dome,buff,ring,ring,#7fe8ff|#c9f6ff,9,3000,0,5,34,40,0,0,0,0,guard_up,Cyan rings ripple out under a shield sigil - protection
+mana_restore,buff,spiral,glow,#6fa8ff|#b8d4ff|#9f7aff,40,3000,35,3,18,40,0,260,1,0,focus_converge,Blue motes spiral up while light gathers inward - MP restored
+incense_smoke,buff,miasma,glow,#d9c8a0|#f0e2c0|#c9a86a,18,3000,18,9,18,40,0,0,0,0,,Fragrant golden smoke drifts up - Frankincense
+seed_bloom,buff,burst,leaf,#7ed957|#b6f28a|#ffb3cc,42,3000,110,5,20,40,40,200,0,0,faith_up,Leaves and blossoms burst outward - faith grows like a seed
+lead_rally,buff,ring,ring,#ffd84a|#fff3b0,7,3000,0,5,60,40,0,0,0,0,courage_aura,Gold rings sweep out from the leader - a rallying call
+zeal_spark,buff,sparkle,star,#fff3b0|#ffd84a,40,3000,0,5,18,34,0,120,1,0,,Brief golden twinkles - zeal
+steadfast_roots,buff,ring,ring,#a0703a|#7ed957,8,3000,0,4,26,40,0,0,0,0,might_up,Earthy rings anchor the feet - hold your ground
+doubt_miasma,curse,miasma,glow,#9a6aba|#6a3a8a|#b88ad8,23,3000,20,11,16,40,0,0,0,0,,Purple smoke seeps out - doubt takes hold
+despair_drip,curse,drip,drop,#6a5a8a|#8a7aaa|#4a3a66,23,3000,12,5,12,40,70,0,0,0,,Dark drops ooze down from the head - despair
+hex_sigil,curse,glyph,star5,#b04aff|#6a1a9a,6,3000,0,15,22,40,0,90,1,0,,A violet pentacle sigil turns over the unit - hexed
+hex_runes,curse,orbit,rune,#b04aff|#e0a0ff,8,3000,0,5,22,30,0,-160,1,0,hex_sigil,Runes circle a turning sigil - a full hex
+soul_sap,curse,vortex,glow,#a0203a|#5a0a1a|#ff4a6a,43,3000,0,3,40,34,0,260,1,0,,Crimson light is drawn out and spun away - vitality sapped
+weaken_down,curse,fall,arrow_down,#8a8a9a|#5a5a6a,28,3000,45,5,18,50,0,0,0,0,,Grey arrows sink down the body - strength fading
+faith_down,curse,fall,arrow_down,#9a7a2a|#5a4a1a,28,3000,45,5,18,50,0,0,0,0,,Tarnished arrows sink - faith shaken
+slow_chains,curse,converge,ring,#9aa0b0|#5a6070,21,3000,0,4,34,20,0,0,0,0,,Grey rings tighten around the legs - slowed
+silence_seal,curse,glyph,x,#6a2a8a|#b070d0,4,3000,0,12,16,40,0,0,1,0,,A dark X seals the lips - silenced
+fear_shadows,curse,burst,glow,#4a2a6a|#6a4a8a|#34204a,34,3000,50,11,20,40,0,0,0,0,,Shadows lurch out from the unit - fear
+blight_bubbles,curse,rise,bubble,#8ab040|#6a3a8a|#aad060,26,3000,30,4,16,40,0,0,0,0,,Sickly bubbles rise and pop - a blight
+bad_omen_eye,curse,glyph,eye,#c0303a|#ff6a6a,4,3000,0,10,14,40,0,0,1,0,,A red eye opens over the unit - a bad omen
+withering_petals,curse,fall,petal,#6a3a4a|#8a5a6a|#4a2a36,21,3000,35,5,22,50,0,160,0,0,,Dead petals drift down - withering
+curse_mark,curse,glyph,rune,#8a2aff|#d08aff,5,3000,0,14,16,40,0,60,1,0,doubt_miasma,A violet rune brands the unit in smoke - cursed
+snare_bind,curse,glyph,net,#e8e0c8|#b8a878,3,3000,0,14,18,40,0,0,0,0,slow_chains,A net drops over the unit as rings tighten - snared
+stun_stars,curse,orbit,star,#ffe14a|#fff3b0,5,3000,0,4,14,48,0,320,1,0,,Stars circle the head - dazed
+despair_storm,curse,miasma,glow,#2a2438|#3a3050|#1a1426,24,3000,16,10,18,50,0,0,0,0,despair_drip,A dark cloud gathers and drips - despair sets in
+zeal_fade,curse,fall,dot,#9a9aa6|#c8c8d0,25,3000,30,3,16,40,0,0,0,0,,Grey motes settle - the leader's zeal fades
+fizzle,curse,burst,dot,#8a8a8a|#b0b0b0,43,3000,50,3,10,20,60,0,0,0,,A puff of grey dust - the words fall on deaf ears
+holy_motes,holy,sparkle,star,#fff3b0|#ffd84a|#ffffff,44,3000,0,5,20,34,0,90,1,0,,Golden light twinkles around the unit - the word lands
+holy_rise,holy,rise,glow,#fff3b0|#ffd84a|#ffffff,40,3000,50,4,20,40,0,0,1,0,,Golden motes rise from the ground - gentle healing
+divine_pillar,holy,pillar,glow,#fff3c0|#ffe07a,26,3000,70,4,16,110,0,0,1,0,,A column of light falls on the unit with motes rising inside
+angel_feathers,holy,fall,feather,#ffffff|#f4f0ff|#fff8e0,22,3000,30,5,26,70,0,140,0,0,,White feathers drift down from above
+halo_crown,holy,halo,ring,#ffe07a|#fff3c0,1,3000,0,4,12,40,0,0,1,0,,A golden halo hovers over the head
+blessing_rain,holy,fall,drop,#bfe6ff|#fff3b0|#ffffff,36,3000,70,3,22,70,0,0,1,0,,A soft rain of light falls on the unit
+grace_fountain,holy,fountain,glow,#fff3b0|#ffd84a,51,3000,140,3,20,40,240,0,1,0,,Golden sparks spring up and shower back down
+heavenly_rays,holy,rays,glow,#fff3c0|#ffe9a0,10,3000,0,3,20,60,0,30,1,0,,Rays of light radiate from the unit
+radiant_cross,holy,glyph,cross,#ffe07a|#fff8d0,5,3000,0,16,18,40,0,0,1,0,,A radiant golden cross appears over the unit
+sanctify_ring,holy,ring,ring,#ffe07a|#fff3c0,8,3000,0,4,30,40,0,0,0,0,,Golden rings ripple out along the ground
+renewal_bloom,holy,burst,petal,#ffb3cc|#ffffff|#b6f28a,46,3000,100,5,20,40,30,220,0,0,holy_rise,Petals burst open over rising light - renewal
+soothing_waters,holy,rise,bubble,#8fd3ff|#c8ecff|#ffffff,30,3000,35,4,18,40,0,0,0,0,,Clear bubbles rise - soothing
+holy_heal,holy,rise,plus,#fff3b0|#ffd84a|#ffffff,26,3000,45,4,18,40,0,0,1,0,holy_rise|sanctify_ring,Gold crosses and motes rise over rippling rings - Heal
+rekindle_flame,holy,rise,glow,#ffb347|#ff8a3d|#ffe07a,36,3000,50,4,16,40,0,0,1,0,halo_crown,Warm embers rise under a halo - faith rekindled
+resurrection_light,holy,pillar,glow,#ffffff|#fff3c0,24,3000,80,4,18,140,0,0,1,90,angel_feathers|halo_crown,A blinding column with falling feathers and a halo - life restored
+divine_conversion,holy,glyph,cross,#ffe07a|#ffffff,6,3000,0,18,20,40,0,0,1,70,divine_pillar|heavenly_rays,A great cross in a pillar of light - a heart converted
+first_aid,first_aid,burst,bandage,#e04040,20,3000,60,5,16,40,40,90,0,0,medic_plus,Bandages flutter out as red crosses rise - First Aid
+medic_plus,first_aid,rise,plus,#ff5a5a|#ffffff,23,3000,40,4,16,40,0,0,0,0,,Red and white crosses float upward
+medic_cross,first_aid,glyph,plus,#ff4a4a|#ffffff,4,3000,0,12,14,40,0,0,1,0,medic_plus,A red medic cross appears with smaller crosses rising
+herbal_salve,first_aid,spiral,leaf,#7ed957|#4aa83a|#b6f28a,30,3000,30,5,18,40,0,240,0,0,,Green leaves swirl around the wound - Healing Salve
+mending_stitches,first_aid,converge,spark,#ffffff|#ffd0d0,48,3000,0,3,30,24,0,0,0,0,,White threads draw in to close the wound
+cool_compress,first_aid,sparkle,drop,#9fd8ff|#e0f4ff,38,3000,0,4,16,30,0,0,0,0,,Cool droplets glisten on the unit
+heartbeat_pulse,first_aid,ring,ring,#ff7aa8|#ffb3cc,8,3000,0,4,24,40,0,0,0,0,love_up,Pink pulses ripple out with rising hearts - a steady heartbeat
+flash,flash,flash,glow,#ffffff,7,3000,0,4,60,40,0,0,1,0,,A bright local flash
+flash_bang_white,flash,flash,glow,#ffffff|#fff8e0,9,3000,0,4,90,40,0,0,1,140,,A searing white flash that washes the screen
+blinding_light,flash,rays,glow,#ffffff|#fffbe0,14,3000,0,4,20,90,0,50,1,90,flash,White rays blaze out in a flash - blinded
+sun_glare,flash,glyph,star,#fff3b0|#ffd84a,4,3000,0,20,18,40,0,120,1,40,heavenly_rays,A sunburst star flares with radiating rays
+dazzle_sparks,flash,burst,star,#ffffff|#fff3b0|#b8e4ff|#ffc8f0,90,3000,180,4,20,40,0,400,1,0,,A quick burst of dazzling stars
+starburst,flash,burst,spark,#ffe07a|#ffffff,90,3000,220,4,20,40,0,0,1,0,flash,Gold sparks shoot out of a flash
+prism_flash,flash,burst,diamond,#ff8a8a|#ffd84a|#8aff9a|#8ac8ff|#c88aff,66,3000,140,4,20,40,0,300,1,0,flash,Rainbow shards scatter from a flash
+revelation_flash,flash,flash,glow,#ffe07a|#ffffff,7,3000,0,4,70,40,0,0,1,60,sanctify_ring,A golden flash and rings - a revelation
+blind_veil,flash,glyph,eye,#e8e8f0|#a0a0b8,3,3000,0,11,14,40,0,0,0,0,flash|fear_shadows,A pale eye flares and dims into shadow - blinded
+camera_flash,flash,flash,glow,#ffffff,10,3000,0,4,40,40,0,0,1,120,,An instant white-out

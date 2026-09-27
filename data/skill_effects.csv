@@ -1,0 +1,64 @@
+skill,effect,anchor,on
+Preach,holy_motes,target,hit
+Preach,zeal_spark,caster,hit
+Preach,divine_conversion,target,convert
+Preach,angel_feathers,target,convert
+Preach,revelation_flash,target,convert
+Preach,fizzle,target,miss
+Preach,doubt_miasma,target,shaken
+Preach,faith_down,target,shaken
+Preach,bad_omen_eye,caster,shaken
+Preach,despair_storm,target,despair
+Preach,fear_shadows,target,despair
+Heal,holy_heal,target,hit
+Heal,blessing_rain,target,hit
+Heal,zeal_spark,caster,hit
+First Aid,first_aid,target,hit
+First Aid,mending_stitches,target,hit
+Lead,lead_rally,caster,hit
+Lead,heavenly_rays,caster,hit
+Lead,love_up,recipients,hit
+Defend,aegis_shield,target,hit
+Defend,steadfast_roots,target,hit
+Command,haste_wind,target,hit
+Command,swift_feathers,target,hit
+Command,focus_converge,caster,hit
+Fish net,snare_bind,target,hit
+Fish net,fizzle,target,miss
+Shove,stun_stars,target,hit
+Shove,dazzle_sparks,target,hit
+Slash,barrier_dome,target,blocked
+Slash,flash,target,blocked
+Shoot,barrier_dome,target,blocked
+Shoot,flash,target,blocked
+Healing Salve,herbal_salve,target,hit
+Healing Salve,cool_compress,target,hit
+Ankh,resurrection_light,target,hit
+Ankh,heartbeat_pulse,target,hit
+Myrrh,mana_restore,target,hit
+Myrrh,soothing_waters,target,hit
+Frankincense,incense_smoke,target,hit
+Frankincense,wisdom_glow,target,hit
+Mustard Seed,seed_bloom,target,hit
+Mustard Seed,renewal_bloom,target,hit
+@morale,valor_burst,target,always
+@morale,might_up,target,always
+@rekindle,rekindle_flame,target,always
+@rekindle,grace_fountain,target,always
+@lead_fade,zeal_fade,target,always
+@despair_turn,despair_drip,target,always
+@stunned,stun_stars,target,always
+@snared,slow_chains,target,always
+@level_up,sun_glare,target,always
+@level_up,might_up,target,always
+@disarmed,silence_seal,target,always
+Slash,silence_seal,target,hit
+Rally,medic_cross,target,hit
+Rally,soothing_waters,target,hit
+@turned_back,fear_shadows,target,always
+@turned_back,curse_mark,target,always
+@fled,swift_feathers,target,always
+@escaped,swift_feathers,target,always
+@heavenly_light,divine_pillar,target,always
+@heavenly_light,heavenly_rays,target,always
+@heavenly_light,blinding_light,target,always

@@ -1,12 +1,12 @@
-name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,magic_attack,magic_defense,faith,bravery,patience,love
-Paul,Player,Missionary,1,1,15,4,2,100,Preach|Heal|Resurrection,255,200,0,assets/paul.png,25,6,129,24,3,20
-Peter,Player,Apostle,0,0,12,3,1,20,Preach|First Aid|Fish net,50,120,240,assets/simon_peter.png,10,28,122,6,32,25
-Barnabas,Player,Apostle,0,1,11,3,1,15,Preach|Defend|Fish net,70,140,255,assets/barnabas.png,38,48,150,40,33,21
-Mark,Player,Apostle,1,0,13,3,1,10,Preach|Slash,60,130,240,assets/mark.png,12,16,118,41,26,45
-John,Player,Apostle,3,0,11,3,1,50,Preach|Heal,80,150,255,assets/john.png,31,26,113,19,13,34
-Legionnaire 1,Enemy,Soldier,6,6,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,15,20,100,20,20,20
-Legionnaire 2,Enemy,Soldier,7,7,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,18,22,100,22,18,18
-Legionnaire 3,Enemy,Soldier,5,5,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,17,21,100,24,19,21
-Legionnaire 4,Enemy,Soldier,4,6,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,16,19,100,21,22,19
-Legionnaire 5,Enemy,Soldier,7,6,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,19,23,100,23,20,17
-Legionnaire 6,Enemy,Soldier,5,7,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,14,21,100,19,23,22
+name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,magic_attack,magic_defense,faith,bravery,patience,love,level
+Paul,Player,Missionary,1,1,15,4,2,100,Preach|Heal|Lead,255,200,0,assets/paul.png,25,6,129,24,3,20,1
+Peter,Player,Apostle,0,0,12,3,1,20,Preach|First Aid|Fish net,50,120,240,assets/simon_peter.png,10,28,122,6,32,25,1
+Barnabas,Player,Apostle,0,1,11,3,1,15,Preach|Defend|Fish net,70,140,255,assets/barnabas.png,38,48,150,40,33,21,1
+Mark,Player,Apostle,1,0,13,3,1,10,Preach|Slash,60,130,240,assets/mark.png,12,16,118,41,26,45,1
+John,Player,Apostle,3,0,11,3,1,50,Preach|Heal,80,150,255,assets/john.png,31,26,113,19,13,34,1
+Legionnaire Shieldbearer 1,Enemy,Shieldbearer,6,6,10,3,1,0,Preach|Slash|Defend,200,50,50,assets/legionaire.png,15,20,100,20,20,20,1
+Legionnaire Archer 1,Enemy,Archer,7,7,10,3,1,0,Preach|Shoot,200,50,50,assets/legionaire.png,18,22,100,22,18,18,1
+Legionnaire Medic 1,Enemy,Medic,5,5,11,3,1,0,Preach|Rally|Shove,200,50,50,assets/legionaire.png,17,21,100,24,19,21,1
+Legionnaire Shieldbearer 2,Enemy,Shieldbearer,4,6,10,3,1,0,Preach|Slash|Defend,200,50,50,assets/legionaire.png,16,19,100,21,22,19,1
+Legionnaire Shieldbearer 3,Enemy,Shieldbearer,7,6,10,3,1,0,Preach|Slash|Defend,200,50,50,assets/legionaire.png,19,23,100,23,20,17,1
+Legionnaire Medic 2,Enemy,Medic,5,7,11,3,1,0,Preach|Rally|Shove,200,50,50,assets/legionaire.png,14,21,100,19,23,22,1

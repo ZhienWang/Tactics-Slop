@@ -1,0 +1,60 @@
+Converted Legionnaire portraits (assets/portraits/converts/convert_NN.png).
+
+Cropped and scaled to 200x100 from 17th-century paintings (tronies and head
+studies of ordinary people) on Wikimedia Commons. All are public domain: the
+painters died centuries ago and the files are marked Public domain on Commons.
+
+convert_01.png
+  A tronie of a young man wearing a helmet (by Circle of Rembrandt).jpg
+  Circle of Rembrandt, 17th-century - Public domain
+  https://commons.wikimedia.org/wiki/File:A_tronie_of_a_young_man_wearing_a_helmet_(by_Circle_of_Rembrandt).jpg
+
+convert_02.png
+  Annibale Carracci - The Beaneater - WGA04408.jpg
+  Annibale Carracci, between 1583 and 1585 - Public domain
+  https://commons.wikimedia.org/wiki/File:Annibale_Carracci_-_The_Beaneater_-_WGA04408.jpg
+
+convert_03.png
+  Frans Hals - Portrait of a Fisherman 070N10007 9HX8T.jpg
+  Frans Hals, 1630 - Public domain
+  https://commons.wikimedia.org/wiki/File:Frans_Hals_-_Portrait_of_a_Fisherman_070N10007_9HX8T.jpg
+
+convert_04.png
+  Jacob Jordaens - Study of the head of an old man (Abraham Grapheus).jpg
+  Jacob Jordaens, circa 1620 - Public domain
+  https://commons.wikimedia.org/wiki/File:Jacob_Jordaens_-_Study_of_the_head_of_an_old_man_(Abraham_Grapheus).jpg
+
+convert_05.png
+  Jan Lievens - Head of an old man.jpg
+  Jan Lievens, 17th century - Public domain
+  https://commons.wikimedia.org/wiki/File:Jan_Lievens_-_Head_of_an_old_man.jpg
+
+convert_06.png
+  Peter Paul Rubens - Head of a Young Man - Google Art Project.jpg
+  Peter Paul Rubens, 1601/1602 - Public domain
+  https://commons.wikimedia.org/wiki/File:Peter_Paul_Rubens_-_Head_of_a_Young_Man_-_Google_Art_Project.jpg
+
+convert_07.png
+  Peter Paul Rubens - Head of a young man wearing armour.jpg
+  Peter Paul Rubens, between 1614 and 1615 - Public domain
+  https://commons.wikimedia.org/wiki/File:Peter_Paul_Rubens_-_Head_of_a_young_man_wearing_armour.jpg
+
+convert_08.png
+  Peter Paul Rubens - Head study of an old man with a curly beard.jpg
+  Peter Paul Rubens, circa 1609 - Public domain
+  https://commons.wikimedia.org/wiki/File:Peter_Paul_Rubens_-_Head_study_of_an_old_man_with_a_curly_beard.jpg
+
+convert_09.png
+  Rembrandt, A Bust of an Old Man, 1633.jpg
+  Rembrandt, 1633 - Public domain
+  https://commons.wikimedia.org/wiki/File:Rembrandt,_A_Bust_of_an_Old_Man,_1633.jpg
+
+convert_10.png
+  Rembrandt - The laughing man.jpg
+  Rembrandt, Circa 1629-1630 - Public domain
+  https://commons.wikimedia.org/wiki/File:Rembrandt_-_The_laughing_man.jpg
+
+convert_11.png
+  Rubens - Head of an Old Man - Hermitage.jpg
+  Peter Paul Rubens, 1611 - Public domain
+  https://commons.wikimedia.org/wiki/File:Rubens_-_Head_of_an_Old_Man_-_Hermitage.jpg

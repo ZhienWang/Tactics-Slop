@@ -5,7 +5,7 @@ import random
 import pytest
 
 from scripts import game_logic
-from scripts.data_editor import load_dialogues_from_csv, load_skills_from_csv, load_characters_from_csv
+from scripts.data_editor import load_dialogues_from_csv, load_skills_from_csv, load_characters_from_csv, load_stage_manifest, load_escape_tiles_from_csv
 
 
 def make_unit(name, team, x, y, faith, mp, skills, char_class="Knight"):
@@ -214,12 +214,13 @@ def test_defend_sets_guarded_flag_on_target():
 
 
 def test_resolve_physical_hit_kills_unguarded_target():
+    """Shoot still strikes down; Slash only disarms (see below)."""
     game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
     attacker = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
     target = make_unit("Peter", "Player", 0, 1, 0, 0, [])
 
     random.seed(1)  # a hit at the flat-ground (base) hit chance
-    killed, message = game_logic.resolve_physical_hit(attacker, target, "Slash")
+    killed, message = game_logic.resolve_physical_hit(attacker, target, "Shoot")
 
     assert killed is True
     assert not target.is_alive()
@@ -319,7 +320,7 @@ def test_morale_buff_chance_grows_with_bravery_and_is_capped():
     timid.bravery = 0
     brave.bravery = 1000  # absurdly high - should still clamp, never guarantee a proc
 
-    assert game_logic.morale_buff_chance(timid) == 0
+    assert game_logic.morale_buff_chance(timid) == game_logic.MORALE_BASE_CHANCE  # the dice baseline
     assert game_logic.morale_buff_chance(brave) == game_logic.MORALE_CHANCE_CAP
 
 
@@ -506,7 +507,7 @@ def test_apply_preach_converts_and_flashes_at_faith_cap():
     message = game_logic.apply_preach(paul, judas)
 
     assert judas.team == "Player"
-    assert judas.faith == game_logic.FAITH_CAP
+    assert judas.faith == game_logic.SIDE_SWITCH_FAITH  # a young faith on the new side
     assert judas.converted_at is not None
     assert "join the Player team" in message
 
@@ -539,6 +540,77 @@ def test_apply_preach_gain_also_scales_with_preachers_magic_attack():
     game_logic.apply_preach(weaker_preacher, weaker_target)
 
     assert target.faith > weaker_target.faith
+
+
+def test_enemy_preach_lowers_player_faith():
+    legionnaire = make_unit("Legionnaire", "Enemy", 0, 0, 100, 0, [])
+    peter = make_unit("Peter", "Player", 0, 1, 120, 0, [])
+
+    message = game_logic.apply_preach(legionnaire, peter)
+
+    expected_loss = (legionnaire.faith + legionnaire.magic_attack) * game_logic.FAITH_TRANSFER_RATE
+    assert peter.faith == pytest.approx(120 - expected_loss)
+    assert peter.faith_popup["amount"] < 0
+    assert "doubt" in message
+
+
+def test_enemy_preach_cannot_drop_player_faith_below_zero():
+    legionnaire = make_unit("Legionnaire", "Enemy", 0, 0, 200, 0, [])
+    peter = make_unit("Peter", "Player", 0, 1, 5, 0, [])
+
+    game_logic.apply_preach(legionnaire, peter)
+
+    assert peter.faith == 0
+
+
+def test_enemy_healing_an_ally_still_raises_faith():
+    medic = make_unit("Medic", "Enemy", 0, 0, 100, 0, [])
+    legionnaire = make_unit("Legionnaire", "Enemy", 0, 1, 20, 0, [])
+
+    game_logic.apply_preach(medic, legionnaire)
+
+    assert legionnaire.faith > 20
+
+
+def test_player_falls_into_despair_when_faith_hits_zero():
+    legionnaire = make_unit("Legionnaire", "Enemy", 0, 0, 200, 0, [])
+    peter = make_unit("Peter", "Player", 0, 1, 5, 0, [])
+
+    message = game_logic.apply_preach(legionnaire, peter)
+
+    assert peter.despair_turns == game_logic.DESPAIR_TURNS
+    assert "despair" in message
+
+
+def test_despair_is_not_reset_by_further_preaching():
+    legionnaire = make_unit("Legionnaire", "Enemy", 0, 0, 200, 0, [])
+    peter = make_unit("Peter", "Player", 0, 1, 5, 0, [])
+    game_logic.apply_preach(legionnaire, peter)
+    game_logic.tick_despair(peter)
+
+    game_logic.apply_preach(legionnaire, peter)
+
+    assert peter.despair_turns == game_logic.DESPAIR_TURNS - 1
+
+
+def test_despair_skips_three_turns_then_recovers():
+    peter = make_unit("Peter", "Player", 0, 1, 0, 0, [])
+    game_logic.enter_despair_if_faithless(peter)
+
+    logs = [game_logic.tick_despair(peter) for _ in range(game_logic.DESPAIR_TURNS)]
+
+    assert all(logs)  # each of those turns is lost
+    assert "rekindled" in logs[-1]
+    assert peter.despair_turns == 0
+    assert peter.faith == game_logic.DESPAIR_RECOVERY_FAITH
+    assert game_logic.tick_despair(peter) is None  # the next turn is a normal one
+
+
+def test_enemy_units_never_fall_into_despair():
+    legionnaire = make_unit("Legionnaire", "Enemy", 0, 0, 0, 0, [])
+
+    assert not game_logic.enter_despair_if_faithless(legionnaire)
+    assert legionnaire.despair_turns == 0
 
 
 # --- Data integrity: every character skill must exist in skills.csv ---
@@ -915,3 +987,567 @@ def test_apply_equipment_bonuses_ignores_empty_slots_and_unknown_items():
 def test_unit_defaults_to_no_equipment():
     unit = make_unit("Peter", "Player", 0, 0, 0, 0, [])
     assert unit.equipment == {}
+
+
+# --- Battle preview (predict_action) ---
+
+PREVIEW_SKILLS = {
+    "Preach": {"mp_cost": 0, "range": 1, "damage": 30, "type": "Faith", "color": (255, 215, 0)},
+    "Slash": {"mp_cost": 0, "range": 1, "damage": 45, "type": "Physical", "color": (255, 100, 50)},
+    "Shove": {"mp_cost": 0, "range": 1, "damage": 0, "type": "Status", "color": (220, 40, 40)},
+}
+
+
+def test_preview_preach_matches_what_preach_actually_does():
+    game_logic.SKILL_REGISTRY = PREVIEW_SKILLS
+    paul = make_unit("Paul", "Player", 0, 0, 100, 0, [])
+    judas = make_unit("Judas", "Enemy", 0, 1, 40, 0, [])
+
+    prediction = game_logic.predict_action(paul, judas, "Preach")
+    game_logic.apply_preach(paul, judas)
+
+    assert prediction["chance"] == game_logic.faith_hit_chance(paul)
+    assert prediction["faith_before"] == 40
+    assert prediction["faith_after"] == pytest.approx(judas.faith)
+    assert prediction["outcome"] == "Faith up"
+
+
+def test_preview_flags_a_conversion():
+    game_logic.SKILL_REGISTRY = PREVIEW_SKILLS
+    paul = make_unit("Paul", "Player", 0, 0, 200, 0, [])
+    judas = make_unit("Judas", "Enemy", 0, 1, game_logic.FAITH_CAP - 1, 0, [])
+
+    assert game_logic.predict_action(paul, judas, "Preach")["outcome"] == "CONVERT!"
+    assert judas.team == "Enemy"  # predicting changes nothing
+
+
+def test_preview_slash_uses_the_physical_hit_chance():
+    game_logic.SKILL_REGISTRY = PREVIEW_SKILLS
+    game_logic.MAP_DATA = [[0 for _ in range(6)] for _ in range(6)]
+    mark = make_unit("Mark", "Player", 0, 0, 100, 0, [])
+    soldier = make_unit("Soldier", "Enemy", 0, 1, 100, 0, [])
+
+    prediction = game_logic.predict_action(mark, soldier, "Slash")
+
+    assert prediction["chance"] == game_logic.physical_hit_chance(mark, soldier)
+    assert prediction["outcome"] == f"Disarm {game_logic.DISARM_TURNS} turns"
+
+
+def test_preview_slash_on_a_guarded_target_shows_the_block():
+    game_logic.SKILL_REGISTRY = PREVIEW_SKILLS
+    game_logic.MAP_DATA = [[0 for _ in range(6)] for _ in range(6)]
+    mark = make_unit("Mark", "Player", 0, 0, 100, 0, [])
+    soldier = make_unit("Soldier", "Enemy", 0, 1, 100, 0, [])
+    soldier.guarded = True
+
+    prediction = game_logic.predict_action(mark, soldier, "Slash")
+
+    assert prediction["chance"] == 0.0
+    assert soldier.guarded  # predicting doesn't spend the guard
+
+
+def test_preview_shove_accounts_for_the_targets_patience():
+    game_logic.SKILL_REGISTRY = PREVIEW_SKILLS
+    mark = make_unit("Mark", "Player", 0, 0, 100, 0, [])
+    soldier = make_unit("Soldier", "Enemy", 0, 1, 100, 0, [])
+
+    prediction = game_logic.predict_action(mark, soldier, "Shove")
+
+    assert prediction["chance"] == pytest.approx(game_logic.SHOVE_CHANCE * (1 - game_logic.status_resist_chance(soldier)))
+
+
+# --- Faith attack accuracy (Love) ---
+
+def test_faith_hit_chance_grows_with_love():
+    cold = make_unit("Cold", "Player", 0, 0, 100, 0, [])
+    warm = make_unit("Warm", "Player", 0, 0, 100, 0, [])
+    cold.love, warm.love = 5, 40
+
+    assert game_logic.faith_hit_chance(warm) > game_logic.faith_hit_chance(cold)
+    assert game_logic.faith_hit_chance(cold) == pytest.approx(game_logic.FAITH_BASE_HIT_CHANCE + 5 * game_logic.FAITH_HIT_PER_LOVE)
+
+
+def test_faith_hit_chance_is_clamped():
+    saint = make_unit("Saint", "Player", 0, 0, 100, 0, [])
+    saint.love = 500
+    stone = make_unit("Stone", "Player", 0, 0, 100, 0, [])
+    stone.love = -100
+
+    assert game_logic.faith_hit_chance(saint) == game_logic.FAITH_MAX_HIT_CHANCE
+    assert game_logic.faith_hit_chance(stone) == game_logic.FAITH_MIN_HIT_CHANCE
+
+
+def test_missed_faith_attack_leaves_target_faith_unchanged(monkeypatch):
+    paul = make_unit("Paul", "Player", 0, 0, 100, 0, [])
+    judas = make_unit("Judas", "Enemy", 0, 1, 40, 0, [])
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.999)  # above any hit chance
+
+    message = game_logic.resolve_faith_attack(paul, judas)
+
+    assert judas.faith == 40
+    assert "Miss" in message
+
+
+def test_landed_faith_attack_applies_preach(monkeypatch):
+    paul = make_unit("Paul", "Player", 0, 0, 100, 0, [])
+    judas = make_unit("Judas", "Enemy", 0, 1, 40, 0, [])
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)
+
+    game_logic.resolve_faith_attack(paul, judas)
+
+    assert judas.faith > 40
+
+
+# --- Lead (Paul's area Love buff) ---
+
+LEAD_SKILLS = {"Lead": {"mp_cost": 50, "range": 0, "damage": 0, "type": "Support", "color": (255, 200, 0)}}
+
+
+def test_lead_gives_love_to_allies_within_two_tiles_including_the_leader():
+    game_logic.SKILL_REGISTRY = LEAD_SKILLS
+    paul = make_unit("Paul", "Player", 2, 2, 100, 100, ["Lead"])
+    near = make_unit("Near", "Player", 3, 3, 100, 0, [])      # 2 tiles away
+    far = make_unit("Far", "Player", 5, 2, 100, 0, [])        # 3 tiles away
+    enemy = make_unit("Enemy", "Enemy", 2, 3, 100, 0, [])
+    units = [paul, near, far, enemy]
+    before = {u.name: u.love for u in units}
+
+    assert game_logic.apply_skill_status("Lead", paul, paul, units)
+
+    assert paul.love == before["Paul"] + game_logic.LEAD_LOVE_BONUS
+    assert near.love == before["Near"] + game_logic.LEAD_LOVE_BONUS
+    assert far.love == before["Far"]
+    assert enemy.love == before["Enemy"]
+
+
+def test_relead_refreshes_turns_without_stacking_love():
+    game_logic.SKILL_REGISTRY = LEAD_SKILLS
+    paul = make_unit("Paul", "Player", 2, 2, 100, 100, ["Lead"])
+    game_logic.apply_skill_status("Lead", paul, paul, [paul])
+    love_once = paul.love
+    game_logic.tick_lead(paul)
+
+    assert game_logic.apply_skill_status("Lead", paul, paul, [paul])
+    assert paul.love == love_once
+    assert paul.lead_turns == game_logic.LEAD_TURNS
+
+
+def test_lead_lasts_three_turns_then_wears_off():
+    paul = make_unit("Paul", "Player", 2, 2, 100, 100, ["Lead"])
+    base_love = paul.love
+    game_logic.apply_skill_status("Lead", paul, paul, [paul])
+
+    for _ in range(game_logic.LEAD_TURNS):  # each of the next 3 turns is led
+        assert not game_logic.tick_lead(paul)
+        assert paul.love == base_love + game_logic.LEAD_LOVE_BONUS
+
+    assert game_logic.tick_lead(paul)  # the 4th turn starts without it
+    assert paul.love == base_love
+    assert not game_logic.tick_lead(paul)
+    assert paul.love == base_love
+
+
+def test_lead_targets_only_the_leaders_own_tile():
+    game_logic.MAP_DATA = [[0 for _ in range(5)] for _ in range(5)]
+    game_logic.MAP_ROWS = game_logic.MAP_COLS = 5
+    game_logic.SKILL_REGISTRY = LEAD_SKILLS
+    paul = make_unit("Paul", "Player", 2, 2, 100, 100, ["Lead"])
+
+    assert game_logic.get_skill_targets(paul, "Lead", [paul]) == [(2, 2)]
+
+
+def test_lead_raises_preach_accuracy():
+    paul = make_unit("Paul", "Player", 0, 0, 100, 100, [])
+    paul.love = 20
+    before = game_logic.faith_hit_chance(paul)
+    game_logic.apply_skill_status("Lead", paul, paul, [paul])
+
+    assert game_logic.faith_hit_chance(paul) > before
+
+
+
+# --- Slash disarms instead of killing ---
+
+def test_slash_disarms_for_two_turns_instead_of_killing(monkeypatch):
+    game_logic.MAP_DATA = [[0 for _ in range(4)] for _ in range(4)]
+    mark = make_unit("Mark", "Player", 0, 0, 100, 0, [])
+    soldier = make_unit("Soldier", "Enemy", 0, 1, 100, 0, [])
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)
+
+    killed, message = game_logic.resolve_physical_hit(mark, soldier, "Slash")
+
+    assert killed is False and soldier.is_alive()
+    assert soldier.disarmed_turns == 2
+    assert "disarms" in message
+
+
+def test_disarmed_unit_cannot_act_for_its_next_two_turns_then_recovers():
+    soldier = make_unit("Soldier", "Enemy", 0, 1, 100, 0, [])
+    soldier.disarmed_turns = game_logic.DISARM_TURNS
+    for _ in range(2):
+        assert game_logic.begin_turn(soldier)["disarmed"]
+        assert soldier.has_acted  # Act and Item are off the menu
+        assert game_logic.choose_ai_action(soldier, [soldier])["action"] == "skip"
+    assert not game_logic.begin_turn(soldier)["disarmed"]
+    assert not soldier.has_acted
+
+
+# --- Morale: once per battle, one turn ---
+
+def test_morale_fires_only_once_per_battle(monkeypatch):
+    unit = make_unit("Peter", "Player", 0, 0, 100, 0, [])
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)
+    assert game_logic.apply_morale_buff(unit)
+    game_logic.end_morale_buff(unit)
+    assert not game_logic.apply_morale_buff(unit)
+
+
+def test_morale_lasts_only_one_turn(monkeypatch):
+    unit = make_unit("Peter", "Player", 0, 0, 100, 0, [])
+    unit.mv, unit.jump, unit.speed = 3, 1, 10
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)
+    game_logic.begin_turn(unit)  # morale fires this turn
+    assert unit.mv == 4 and unit.speed == 15
+    game_logic.begin_turn(unit)  # next turn: taken back, and never again
+    assert (unit.mv, unit.jump, unit.speed) == (3, 1, 10)
+
+
+# --- AI targeting ---
+
+def test_enemy_preach_goes_after_the_lowest_faith_player():
+    game_logic.MAP_DATA = [[0 for _ in range(6)] for _ in range(6)]
+    game_logic.MAP_ROWS = game_logic.MAP_COLS = 6
+    game_logic.SKILL_REGISTRY = {"Preach": {"mp_cost": 0, "range": 3, "damage": 30, "type": "Faith"}}
+    legionnaire = make_unit("Legionnaire", "Enemy", 2, 2, 100, 0, ["Preach"])
+    strong = make_unit("Paul", "Player", 2, 3, 180, 0, [])
+    weak = make_unit("Mark", "Player", 3, 3, 40, 0, [])
+
+    result = game_logic.choose_ai_action(legionnaire, [legionnaire, strong, weak])
+
+    assert result["target"].name == "Mark"
+
+
+def test_ai_shoves_into_a_cluster_but_not_a_lone_unit():
+    game_logic.MAP_DATA = [[0 for _ in range(6)] for _ in range(6)]
+    game_logic.MAP_ROWS = game_logic.MAP_COLS = 6
+    game_logic.SKILL_REGISTRY = {
+        "Preach": {"mp_cost": 0, "range": 1, "damage": 30, "type": "Faith"},
+        "Shove": {"mp_cost": 0, "range": 1, "damage": 0, "type": "Status"},
+    }
+    legionnaire = make_unit("Legionnaire", "Enemy", 2, 2, 100, 0, ["Preach", "Shove"])
+    peter = make_unit("Peter", "Player", 2, 3, 100, 0, [])
+
+    alone = game_logic.choose_ai_action(legionnaire, [legionnaire, peter])
+    assert alone["skill"] == "Preach"
+
+    john = make_unit("John", "Player", 3, 3, 100, 0, [])  # standing next to Peter
+    clustered = game_logic.choose_ai_action(legionnaire, [legionnaire, peter, john])
+    assert clustered["skill"] == "Shove"
+
+
+def test_converted_units_cannot_be_targeted_by_either_side():
+    game_logic.MAP_DATA = [[0 for _ in range(6)] for _ in range(6)]
+    game_logic.MAP_ROWS = game_logic.MAP_COLS = 6
+    game_logic.SKILL_REGISTRY = {
+        "Preach": {"mp_cost": 0, "range": 3, "damage": 30, "type": "Faith"},
+        "Heal": {"mp_cost": 0, "range": 3, "damage": -40, "type": "Heal"},
+    }
+    convert = make_unit("Convert", "Player", 2, 3, 150, 0, [])
+    convert.disabled = True
+    legionnaire = make_unit("Legionnaire", "Enemy", 2, 2, 100, 0, ["Preach"])
+    paul = make_unit("Paul", "Player", 4, 4, 100, 0, ["Heal"])
+    units = [convert, legionnaire, paul]
+
+    # The convert is the only unit in range - so the Legionnaire has nobody to act on.
+    assert game_logic.choose_ai_action(legionnaire, units).get("target") is not convert
+    assert (2, 3) not in game_logic.get_skill_targets(paul, "Heal", units)
+    assert (2, 3) not in game_logic.get_skill_targets(legionnaire, "Preach", units)
+
+
+# --- Stage data ---
+
+def test_rome_fields_seven_enemies():
+    rome = load_characters_from_csv(os.path.join(game_logic.os.path.dirname(game_logic.os.path.dirname(__file__)), "data", "stages", "rome", "characters.csv"))
+    assert sum(1 for c in rome if c["team"] != "Player") == 7
+
+
+def test_enemy_levels_rise_stage_by_stage():
+    root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "stages")
+    order = ["jerusalem", "antioch", "philippi", "corinth", "ephesus", "rome"]
+    levels = []
+    for stage in order:
+        enemies = [c for c in load_characters_from_csv(os.path.join(root, stage, "characters.csv")) if c["team"] != "Player"]
+        levels.append(min(c["level"] for c in enemies))
+    assert levels == sorted(levels) and levels[0] == 1 and levels[-1] > levels[0]
+
+
+def test_players_still_start_at_level_one_everywhere():
+    root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "stages")
+    for stage in os.listdir(root):
+        path = os.path.join(root, stage, "characters.csv")
+        if os.path.exists(path):
+            for c in load_characters_from_csv(path):
+                if c["team"] == "Player":
+                    assert c["level"] == 1, (stage, c["name"])
+
+
+def test_enemies_have_varied_skill_sets():
+    root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "stages")
+    for stage in ["jerusalem", "ephesus"]:
+        soldiers = [c for c in load_characters_from_csv(os.path.join(root, stage, "characters.csv")) if c["team"] != "Player"]
+        assert len({"|".join(c["skills"]) for c in soldiers}) >= 3, stage
+
+
+# --- Legionnaire subclasses ---
+
+def test_shieldbearers_start_guarded_and_are_harder_to_hit():
+    attacker = make_unit("Mark", "Player", 0, 0, 100, 0, ["Slash"])
+    shieldbearer = make_unit("Shield", "Enemy", 1, 0, 100, 0, [], char_class="Shieldbearer")
+    medic = make_unit("Medic", "Enemy", 1, 0, 100, 0, [], char_class="Medic")
+    assert shieldbearer.guarded and not medic.guarded
+    shieldbearer.magic_defense = medic.magic_defense = 0
+    penalty = game_logic.CLASS_HIT_PENALTY_AGAINST["Shieldbearer"]
+    assert game_logic.physical_hit_chance(attacker, shieldbearer) == pytest.approx(game_logic.physical_hit_chance(attacker, medic) - penalty)
+
+
+def test_rally_pulls_faith_back_toward_baseline_and_clears_statuses():
+    medic = make_unit("Medic", "Enemy", 0, 0, 100, 0, ["Rally"], char_class="Medic")
+    ally = make_unit("Ally", "Enemy", 1, 0, 180, 0, [])
+    ally.stunned_turns, ally.snared_turns, ally.disarmed_turns = 1, 2, 2
+    assert game_logic.apply_skill_status("Rally", medic, ally, [medic, ally])
+    assert ally.faith == 180 - game_logic.RALLY_FAITH_RESTORE
+    assert (ally.stunned_turns, ally.snared_turns, ally.disarmed_turns) == (0, 0, 0)
+
+    nearly_steady = make_unit("Ally2", "Enemy", 1, 0, 110, 0, [])
+    game_logic.apply_skill_status("Rally", medic, nearly_steady, [medic, nearly_steady])
+    assert nearly_steady.faith == game_logic.RALLY_BASELINE_FAITH  # never below where enemies start
+
+    steady = make_unit("Ally3", "Enemy", 1, 0, 100, 0, [])
+    assert not game_logic.apply_skill_status("Rally", medic, steady, [medic, steady])
+
+
+def test_ai_medic_rallies_the_ally_closest_to_conversion():
+    game_logic.SKILL_REGISTRY = {"Rally": {"mp_cost": 0, "range": 2, "damage": 0, "type": "Support", "color": (120, 200, 160)}}
+    medic = make_unit("Medic", "Enemy", 0, 0, 100, 0, ["Rally"], char_class="Medic")
+    wavering = make_unit("Wavering", "Enemy", 1, 0, 190, 0, [])
+    doubting = make_unit("Doubting", "Enemy", 0, 1, 120, 0, [])
+    steady = make_unit("Steady", "Enemy", 1, 1, 100, 0, [])
+    paul = make_unit("Paul", "Player", 5, 5, 200, 0, [])
+    choice = game_logic.choose_ai_action(medic, [medic, wavering, doubting, steady, paul])
+    assert choice["skill"] == "Rally" and choice["target"] is wavering
+
+    wavering.faith = doubting.faith = 100
+    assert game_logic.choose_ai_action(medic, [medic, wavering, doubting, steady, paul])["action"] == "skip"
+
+
+# --- Conversion back and forth, fleeing ---
+
+def test_converted_enemies_join_the_player_side_and_take_turns():
+    paul = make_unit("Paul", "Player", 0, 0, 200, 0, [])
+    legionnaire = make_unit("Legionnaire Medic 1", "Enemy", 0, 1, game_logic.FAITH_CAP - 1, 0, ["Rally"], char_class="Medic")
+    legionnaire.portrait_path = legionnaire.original_portrait_path = "assets/legionaire.png"
+    legionnaire.stunned_turns = 1
+    game_logic.apply_preach(paul, legionnaire)
+    assert legionnaire.team == "Player" and legionnaire.converted
+    assert not legionnaire.disabled and game_logic.targetable(legionnaire)
+    assert legionnaire.stunned_turns == 0
+    assert legionnaire.portrait_path == "assets/legionaire_converted.png"
+    assert not game_logic.is_ai_team(legionnaire.team)  # the player commands them now
+    assert legionnaire in game_logic.predict_turn_order([paul, legionnaire], count=4)
+
+
+def test_a_convert_shaken_to_zero_turns_back_instead_of_despairing():
+    convert = make_unit("Legionnaire Archer 1", "Enemy", 0, 1, 10, 0, [])
+    convert.portrait_path = convert.original_portrait_path = "assets/legionaire.png"
+    game_logic.convert_unit(convert, "Player", 0)
+    convert.faith = 5
+    legionnaire = make_unit("Legionnaire 2", "Enemy", 0, 0, 100, 0, [])
+    message = game_logic.apply_preach(legionnaire, convert)
+    assert convert.team == "Enemy" and not convert.converted
+    assert convert.faith == game_logic.SIDE_SWITCH_FAITH and convert.despair_turns == 0
+    assert convert.portrait_path == "assets/legionaire.png"
+    assert "turn back" in message
+
+    # ...and they can be preached over again.
+    convert.faith = game_logic.FAITH_CAP - 1
+    game_logic.apply_preach(make_unit("Paul", "Player", 1, 1, 200, 0, []), convert)
+    assert convert.team == "Player" and convert.converted
+
+
+def test_original_party_members_still_fall_into_despair():
+    peter = make_unit("Peter", "Player", 0, 1, 5, 0, [])
+    game_logic.apply_preach(make_unit("Legionnaire 1", "Enemy", 0, 0, 100, 0, []), peter)
+    assert peter.team == "Player" and peter.despair_turns == game_logic.DESPAIR_TURNS
+
+
+def test_converted_medics_rally_raises_their_new_allies_faith():
+    medic = make_unit("Legionnaire Medic 1", "Enemy", 0, 0, 200, 0, ["Rally"], char_class="Medic")
+    game_logic.convert_unit(medic, "Player", 0)
+    peter = make_unit("Peter", "Player", 0, 1, 50, 0, [])
+    game_logic.apply_skill_status("Rally", medic, peter, [medic, peter])
+    assert peter.faith == 50 + game_logic.RALLY_FAITH_RESTORE
+
+
+def test_legionnaires_flee_more_once_their_side_is_losing_and_less_when_brave(monkeypatch):
+    timid = make_unit("Legionnaire Archer 1", "Enemy", 0, 0, 100, 0, [])
+    timid.bravery = timid.patience = 10
+    brave = make_unit("Legionnaire Shieldbearer 1", "Enemy", 1, 0, 100, 0, [])
+    brave.bravery = brave.patience = 60
+    marcus = make_unit("Centurion Marcus", "Enemy", 2, 0, 100, 0, [])
+    other = make_unit("Legionnaire Medic 1", "Enemy", 3, 0, 100, 0, [])
+    paul = make_unit("Paul", "Player", 5, 5, 200, 0, [])
+    units = [timid, brave, marcus, other, paul]
+
+    assert game_logic.flee_chance(timid, units) == 0  # nobody runs while the line holds
+    game_logic.convert_unit(other, "Player", 0)
+    assert game_logic.flee_chance(timid, units) > game_logic.flee_chance(brave, units)
+    assert game_logic.flee_chance(marcus, units) == 0  # only Legionnaires flee
+    assert game_logic.flee_chance(other, units) == 0  # nor does a convert
+
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.0)
+    assert game_logic.begin_turn(timid, units)["fled"]
+    assert timid.fled and not timid.is_alive()
+
+
+def test_the_battle_is_lost_the_moment_pauls_faith_hits_zero():
+    paul = make_unit("Paul", "Player", 0, 0, 5, 0, [])
+    peter = make_unit("Peter", "Player", 1, 0, 150, 0, [])
+    legionnaire = make_unit("Legionnaire 1", "Enemy", 0, 1, 100, 0, [])
+    units = [paul, peter, legionnaire]
+    assert game_logic.get_winner(units) is None
+    game_logic.apply_preach(legionnaire, paul)
+    assert paul.faith == 0 and paul.is_alive()
+    assert game_logic.get_winner(units) == "Enemy"
+
+    peter.faith = 0  # anyone else's broken faith is Despair, not defeat
+    paul.faith = 50
+    assert game_logic.get_winner(units) is None
+
+
+def test_converted_legionnaires_get_a_random_commoner_face_for_the_battle():
+    game_logic.CONVERT_FACES_USED.clear()
+    faces = game_logic.convert_face_paths()
+    assert len(faces) >= 10
+    converts = []
+    for n in range(len(faces)):
+        unit = make_unit(f"Legionnaire Archer {n + 1}", "Enemy", 0, 0, 200, 0, [])
+        game_logic.convert_unit(unit, "Player", 0)
+        converts.append(unit)
+    assert sorted(u.face_portrait_path for u in converts) == faces  # no two alike
+
+    first = converts[0]
+    face = first.face_portrait_path
+    game_logic.turn_back(first, 0)
+    assert first.face_portrait_path is None
+    game_logic.convert_unit(first, "Player", 0)
+    assert first.face_portrait_path == face  # the same face each time
+
+    marcus = make_unit("Centurion Marcus", "Enemy", 0, 0, 200, 0, [])
+    game_logic.convert_unit(marcus, "Player", 0)
+    assert marcus.face_portrait_path is None  # named enemies keep their own portrait
+
+
+# --- Road to Damascus: the opening stage, and mounts ---
+
+def test_riding_a_horse_adds_three_move_tiles():
+    rider = game_logic.Unit({"name": "Rider", "team": "Player", "x": 0, "y": 0, "speed": 10, "mv": 3, "jump": 1,
+                             "mp": 0, "skills": [], "color": (0, 0, 0), "mount": "horse"})
+    walker = make_unit("Walker", "Player", 0, 0, 100, 0, [])
+    assert rider.mv == 3 + game_logic.MOUNTS["horse"]["mv"] == 6
+    assert walker.mv == 3 and not walker.mount
+
+
+def test_the_road_to_damascus_is_the_first_stage_saul_and_his_guards_ride_against_six_disciples():
+    assert game_logic.FIRST_STAGE_NODE == "damascus"
+    manifest = load_stage_manifest()
+    assert list(manifest)[0] == "damascus"
+    roster = load_characters_from_csv(manifest["damascus"]["characters"])
+    players = [c for c in roster if c["team"] == "Player"]
+    enemies = [c for c in roster if c["team"] != "Player"]
+    assert "Paul" in {c["name"] for c in players}
+    assert all(c["mount"] == "horse" for c in players)
+    assert len(enemies) == 6 and not any(c["mount"] for c in enemies)
+    # The disciples borrow apostle tokens, so each has its own face portrait.
+    assert all(os.path.exists(c["face_portrait"]) for c in enemies)
+
+
+def _escape_board(monkeypatch):
+    game_logic.MAP_DATA = [[0 for _ in range(8)] for _ in range(8)]
+    game_logic.MAP_ROWS = game_logic.MAP_COLS = 8
+    monkeypatch.setattr(game_logic, "PROP_TILES", set())
+    monkeypatch.setattr(game_logic, "ESCAPE_TILES", {(7, 0), (7, 1)})
+    game_logic.SKILL_REGISTRY = {"Preach": {"mp_cost": 0, "range": 1, "damage": 30, "type": "Faith"}}
+
+
+def test_disciples_run_for_the_exits_and_escape_once_they_reach_one(monkeypatch):
+    _escape_board(monkeypatch)
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.99)  # never stands firm
+    disciple = make_unit("Ananias", "Enemy", 2, 3, 100, 0, ["Preach"], char_class="Disciple")
+    saul = make_unit("Paul", "Player", 0, 7, 200, 0, [])
+    units = [disciple, saul]
+
+    plan = game_logic.plan_escape(disciple, units)
+    assert plan and not plan["escapes"]
+    before = game_logic.distance_to_escape((disciple.x, disciple.y))
+    game_logic.carry_out_escape(disciple, plan)
+    assert game_logic.distance_to_escape((disciple.x, disciple.y)) < before
+
+    disciple.has_moved = False
+    disciple.x, disciple.y = 5, 1  # an exit is within its 3 Move
+    plan = game_logic.plan_escape(disciple, units)
+    assert plan["escapes"]
+    game_logic.carry_out_escape(disciple, plan)
+    assert disciple.fled and not disciple.is_alive()
+    assert game_logic.get_winner(units) == "Player"  # the last disciple got away
+
+
+def test_netted_converted_or_non_disciple_units_dont_run(monkeypatch):
+    _escape_board(monkeypatch)
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.99)
+    netted = make_unit("Timon", "Enemy", 2, 3, 100, 0, [], char_class="Disciple")
+    netted.snared_turns = 1
+    convert = make_unit("Nicolas", "Enemy", 3, 3, 100, 0, [], char_class="Disciple")
+    game_logic.convert_unit(convert, "Player", 0)
+    soldier = make_unit("Legionnaire 1", "Enemy", 4, 3, 100, 0, [], char_class="Shieldbearer")
+    units = [netted, convert, soldier]
+    assert game_logic.plan_escape(netted, units) is None
+    assert game_logic.plan_escape(convert, units) is None
+    assert game_logic.plan_escape(soldier, units) is None
+
+
+def test_the_damascus_disciples_start_in_the_centre_and_can_escape_down_the_road():
+    manifest = load_stage_manifest()
+    folder = os.path.dirname(manifest["damascus"]["characters"])
+    exits = load_escape_tiles_from_csv(os.path.join(folder, "escape.csv"))
+    assert exits
+    for c in load_characters_from_csv(manifest["damascus"]["characters"]):
+        if c["team"] == "Enemy":
+            assert c["class"] in game_logic.ESCAPING_CLASSES
+            assert 3 <= c["x"] <= 8 and 3 <= c["y"] <= 6, c["name"]  # the middle of the 12x10 map
+
+
+def test_the_light_from_heaven_comes_when_two_disciples_are_left():
+    scene = game_logic.STAGE_SCENES["damascus"]
+    assert scene["enemies_left"] == 2
+    paul = make_unit("Paul", "Player", 0, 0, 200, 0, [])
+    disciples = [make_unit(f"Disciple {n}", "Enemy", n, 5, 100, 0, [], char_class="Disciple") for n in range(4)]
+    units = [paul] + disciples
+    assert not game_logic.scene_due("damascus", units)
+    game_logic.convert_unit(disciples[0], "Player", 0)
+    assert not game_logic.scene_due("damascus", units)
+    disciples[1].fled = True
+    game_logic.kill_unit(disciples[1])  # escaped
+    assert game_logic.scene_due("damascus", units)  # two left standing
+    assert not game_logic.scene_due("jerusalem", units)  # only stages with a scene
+
+    game_logic.EFFECT_EVENTS.clear()
+    game_logic.strike_down(paul)
+    assert paul.fallen and paul.is_alive()
+    assert game_logic.EFFECT_EVENTS[-1]["trigger"] == "@heavenly_light"
+
+
+def test_the_damascus_scene_has_its_dialogue():
+    lines = load_dialogues_from_csv(map_id="damascus")[game_logic.STAGE_SCENES["damascus"]["dialogue"]]
+    speakers = [speaker for speaker, _ in lines]
+    assert "Jesus" in speakers and "Saul" in speakers
+    assert any("why are you persecuting me" in text for _, text in lines)

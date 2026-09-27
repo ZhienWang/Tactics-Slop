@@ -1,35 +1,20 @@
-name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,magic_attack,magic_defense,faith,bravery,patience,love
-Paul,Player,Missionary,1,1,15,4,2,100,Preach|Heal|Resurrection,255,200,0,assets/paul.png,25,6,129,24,3,20
-Peter,Player,Apostle,0,0,12,3,1,20,Preach|First Aid|Fish net,50,120,240,assets/simon_peter.png,10,28,122,6,32,25
-Barnabas,Player,Apostle,2,0,11,3,1,15,Preach|Defend|Fish net,70,140,255,assets/barnabas.png,38,48,150,40,33,21
-Mark,Player,Apostle,1,0,13,3,1,10,Preach|Slash,60,130,240,assets/mark.png,12,16,118,41,26,45
-John,Player,Apostle,3,0,11,3,1,50,Preach|Heal,80,150,255,assets/john.png,31,26,113,19,13,34
-Philip,Player,Apostle,0,2,10,2,1,30,Preach|First Aid,50,120,240,assets/philip.png,32,27,138,20,36,31
-Timothy,Player,Apostle,2,2,11,3,1,0,Preach|Slash,60,130,240,assets/timothy.png,14,20,128,30,24,30
-Luke,Player,Apostle,1,2,10,2,1,25,Preach|Defend,50,120,240,assets/luke.png,38,32,120,41,32,28
-Titus,Player,Apostle,3,2,12,3,1,0,Preach|First Aid,60,130,240,assets/titus.png,22,14,132,16,25,27
-Silas,Player,Apostle,0,1,11,3,1,0,Preach|Fish net,50,120,240,assets/silas.png,15,20,119,29,32,25
-Priscilla,Player,Apostle,2,3,10,2,1,20,Preach|First Aid,50,120,240,assets/priscilla.png,36,36,130,30,36,31
-Aquila,Player,Apostle,3,1,11,3,1,0,Preach|Slash,60,130,240,assets/aquila.png,8,14,127,16,19,4
-Demas,Enemy,Apostle,2,1,9,2,1,0,Preach|Shove,50,120,240,assets/demas.png,11,36,100,27,35,36
-Centurion Marcus,Enemy,Officer,5,11,13,3,1,0,Preach|Command|Shove,220,60,60,assets/legionaire.png,22,15,100,26,33,22
-Legionnaire 1,Enemy,Soldier,0,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,28,37,100,16,22,28
-Legionnaire 2,Enemy,Soldier,1,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,34,24,100,29,10,40
-Legionnaire 3,Enemy,Soldier,2,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,19,20,100,37,13,31
-Legionnaire 4,Enemy,Soldier,3,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,36,29,100,28,24,19
-Legionnaire 5,Enemy,Soldier,4,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,20,5,100,24,29,29
-Legionnaire 6,Enemy,Soldier,5,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,40,31,100,24,25,14
-Legionnaire 7,Enemy,Soldier,6,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,17,22,100,29,35,15
-Legionnaire 8,Enemy,Soldier,7,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,16,25,100,33,8,25
-Legionnaire 9,Enemy,Soldier,8,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,14,28,100,24,27,15
-Legionnaire 10,Enemy,Soldier,9,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,32,39,100,20,32,22
-Legionnaire 11,Enemy,Soldier,10,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,25,31,100,24,14,22
-Legionnaire 12,Enemy,Soldier,11,8,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,41,35,100,7,17,9
-Legionnaire 13,Enemy,Soldier,0,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,10,15,100,38,38,36
-Legionnaire 14,Enemy,Soldier,1,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,16,35,100,32,38,32
-Legionnaire 15,Enemy,Soldier,2,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,20,35,100,22,29,36
-Legionnaire 16,Enemy,Soldier,3,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,27,39,100,27,13,27
-Legionnaire 17,Enemy,Soldier,4,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,28,8,100,32,22,6
-Legionnaire 18,Enemy,Soldier,5,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,13,0,100,49,18,31
-Legionnaire 19,Enemy,Soldier,6,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,17,19,100,4,19,43
-Legionnaire 20,Enemy,Soldier,7,9,11,3,1,0,Preach|Shove,200,50,50,assets/legionaire.png,27,31,100,30,29,35
+name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,magic_attack,magic_defense,faith,bravery,patience,love,level
+Paul,Player,Missionary,1,1,15,4,2,100,Preach|Heal|Lead,255,200,0,assets/paul.png,25,6,129,24,3,20,1
+Peter,Player,Apostle,0,0,12,3,1,20,Preach|First Aid|Fish net,50,120,240,assets/simon_peter.png,10,28,122,6,32,25,1
+Barnabas,Player,Apostle,2,0,11,3,1,15,Preach|Defend|Fish net,70,140,255,assets/barnabas.png,38,48,150,40,33,21,1
+Mark,Player,Apostle,1,0,13,3,1,10,Preach|Slash,60,130,240,assets/mark.png,12,16,118,41,26,45,1
+John,Player,Apostle,3,0,11,3,1,50,Preach|Heal,80,150,255,assets/john.png,31,26,113,19,13,34,1
+Philip,Player,Apostle,0,2,10,2,1,30,Preach|First Aid,50,120,240,assets/philip.png,32,27,138,20,36,31,1
+Timothy,Player,Apostle,2,2,11,3,1,0,Preach|Slash,60,130,240,assets/timothy.png,14,20,128,30,24,30,1
+Luke,Player,Apostle,1,2,10,2,1,25,Preach|Defend,50,120,240,assets/luke.png,38,32,120,41,32,28,1
+Titus,Player,Apostle,3,2,12,3,1,0,Preach|First Aid,60,130,240,assets/titus.png,22,14,132,16,25,27,1
+Silas,Player,Apostle,0,1,11,3,1,0,Preach|Fish net,50,120,240,assets/silas.png,15,20,119,29,32,25,1
+Priscilla,Player,Apostle,2,3,10,2,1,20,Preach|First Aid,50,120,240,assets/priscilla.png,36,36,130,30,36,31,1
+Aquila,Player,Apostle,3,1,11,3,1,0,Preach|Slash,60,130,240,assets/aquila.png,8,14,127,16,19,4,1
+Demas,Enemy,Apostle,2,1,9,2,1,0,Preach|Fish net|Slash,50,120,240,assets/demas.png,11,36,100,27,35,36,7
+Centurion Marcus,Enemy,Officer,5,11,13,3,1,0,Preach|Command|Defend,220,60,60,assets/legionaire.png,22,15,100,26,33,22,8
+Legionnaire Shieldbearer 1,Enemy,Shieldbearer,1,8,10,3,1,0,Preach|Slash|Defend,200,50,50,assets/legionaire.png,34,24,100,29,10,40,7
+Legionnaire Archer 1,Enemy,Archer,3,8,10,3,1,0,Preach|Shoot,200,50,50,assets/legionaire.png,36,29,100,28,24,19,7
+Legionnaire Medic 1,Enemy,Medic,5,8,11,3,1,0,Preach|Rally|Shove,200,50,50,assets/legionaire.png,40,31,100,24,25,14,7
+Legionnaire Shieldbearer 2,Enemy,Shieldbearer,7,8,10,3,1,0,Preach|Slash|Defend,200,50,50,assets/legionaire.png,16,25,100,33,8,25,7
+Legionnaire Medic 2,Enemy,Medic,9,8,11,3,1,0,Preach|Rally|Shove,200,50,50,assets/legionaire.png,32,39,100,20,32,22,7

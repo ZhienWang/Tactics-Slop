@@ -1,0 +1,12 @@
+name,team,class,x,y,speed,mv,jump,mp,skills,r,g,b,portrait_path,magic_attack,magic_defense,faith,bravery,patience,love,level,mount,face_portrait
+Paul,Player,Missionary,2,8,15,4,2,100,Preach|Heal|Fish net,255,200,0,assets/paul.png,25,6,200,24,3,20,1,horse,
+Temple Guard 1,Player,Soldier,1,9,11,3,1,0,Preach|Fish net|Shove,200,160,60,assets/legionaire.png,16,22,145,26,18,22,1,horse,
+Temple Guard 2,Player,Soldier,3,9,11,3,1,0,Preach|Slash|Shove,200,160,60,assets/legionaire.png,18,20,140,30,15,20,1,horse,
+Temple Guard 3,Player,Soldier,1,7,11,3,1,0,Preach|Fish net|Defend,200,160,60,assets/legionaire.png,15,24,150,22,22,24,1,horse,
+Temple Guard 4,Player,Soldier,3,8,11,3,1,0,Preach|Slash|Fish net,200,160,60,assets/legionaire.png,17,21,142,28,16,21,1,horse,
+Ananias,Enemy,Disciple,6,4,11,3,1,20,Preach|Defend,90,150,90,assets/luke.png,18,20,100,38,34,30,1,,assets/portraits/converts/convert_05.png
+Prochorus,Enemy,Disciple,5,4,10,3,1,0,Preach|Defend,90,150,90,assets/silas.png,14,24,100,34,30,24,1,,assets/portraits/converts/convert_08.png
+Nicanor,Enemy,Disciple,6,5,12,3,1,0,Preach|Shove,90,150,90,assets/titus.png,13,18,100,32,24,18,1,,assets/portraits/converts/convert_03.png
+Timon,Enemy,Disciple,5,5,10,3,1,20,Preach|Shove,90,150,90,assets/timothy.png,16,20,100,30,36,28,1,,assets/portraits/converts/convert_11.png
+Parmenas,Enemy,Disciple,7,4,11,3,1,0,Preach|Fish net,90,150,90,assets/aquila.png,12,22,100,33,28,22,1,,assets/portraits/converts/convert_10.png
+Nicolas,Enemy,Disciple,4,5,11,3,1,0,Preach|Defend,90,150,90,assets/john.png,15,23,100,36,32,26,1,,assets/portraits/converts/convert_06.png

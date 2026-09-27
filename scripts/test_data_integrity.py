@@ -479,3 +479,43 @@ def test_update_character_positions_csv_only_touches_x_and_y(tmp_path):
     assert paul["skills"] == ["Preach", "Heal"]
     assert paul["magic_attack"] == 25
     assert paul["portrait_path"] == "assets/paul.png"
+
+
+# --- Stage weather (weather.csv) ---
+
+WEATHER_FILES = glob.glob(os.path.join(DATA_DIR, "stages", "*", "weather.csv"))
+
+
+@pytest.mark.parametrize("weather_path", WEATHER_FILES)
+def test_stage_weather_is_a_known_type(weather_path):
+    from scripts.data_editor import WEATHER_TYPES
+    with open(weather_path, newline="") as f:
+        rows = {row["setting_name"].strip(): row["value"].strip() for row in csv.DictReader(f)}
+    assert rows.get("weather") in WEATHER_TYPES, f"{weather_path}: weather must be one of {WEATHER_TYPES}"
+
+
+def test_missing_or_unknown_weather_falls_back_to_sunny(tmp_path):
+    from scripts.data_editor import load_weather_from_csv
+    assert load_weather_from_csv(str(tmp_path / "nope.csv")) == "sunny"
+    bad = tmp_path / "weather.csv"
+    bad.write_text("setting_name,value\nweather,blizzard\n")
+    assert load_weather_from_csv(str(bad)) == "sunny"
+    good = tmp_path / "weather2.csv"
+    good.write_text("setting_name,value\nweather,Storm\n")
+    assert load_weather_from_csv(str(good)) == "storm"
+
+
+@pytest.mark.parametrize("kind", ["sunny", "rain", "heavy_rain", "storm"])
+def test_every_weather_type_draws(kind):
+    import pygame
+    from scripts.weather import Weather
+    pygame.init()
+    surface = pygame.Surface((320, 180))
+    weather = Weather(kind, 320, 180, seed=1)
+    for _ in range(3):
+        weather.draw(surface)
+    if kind == "storm":
+        weather.next_strike = 0
+        weather.last_ticks = pygame.time.get_ticks() - 50
+        weather.draw(surface)
+        assert weather.bolt

@@ -414,6 +414,8 @@ CHESS_PIECE_BY_CLASS = {
     "Sergeant": "knight",
     "Archer": "rook",
     "Soldier": "pawn",
+    "Shieldbearer": "pawn",
+    "Medic": "bishop",
 }
 
 
@@ -451,6 +453,8 @@ PIXEL_UNIT_BY_CLASS = {
     "Sergeant": "fighter",
     "Soldier": "fighter",
     "Archer": "mage",
+    "Shieldbearer": "fighter",
+    "Medic": "cleric",
 }
 # Multiplied onto the Enemy side's sprite so the two teams read apart at a
 # glance on a crowded board, the same trick already used for Centurion
@@ -500,8 +504,11 @@ def build_character_face_portraits(units, invalid_assets):
     Legionnaires."""
     face_portraits = {}
     for u in units:
+        # A unit-specific face (e.g. a converted Legionnaire's) comes first.
+        face_img = load_image_safe(u.face_portrait_path) if getattr(u, "face_portrait_path", None) else None
         face_path = f"{FACE_PORTRAIT_DIR}/{os.path.basename(u.portrait_path)}" if u.portrait_path else None
-        face_img = load_image_safe(face_path) if face_path else None
+        if face_img is None and face_path:
+            face_img = load_image_safe(face_path)
         if face_img:
             face_portraits[u.name] = pygame.transform.smoothscale(face_img, (140, 70))
     fallback = build_character_portraits(
