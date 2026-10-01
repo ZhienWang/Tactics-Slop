@@ -40,13 +40,13 @@ Most stages are already built - each episode is mostly story, dialogue, balance 
 
 ## Critical issues (fix before growing the audience)
 
-1. **Saves in the browser.** The web version forgot the player's character on reload, so episodic play didn't work online.
-2. **Phones and touch.** The game was built for mouse and keyboard - typing a name, Esc to back out, keys to zoom and pan. Phones need tap-only controls and landscape play.
-3. **One main branch.** The current game lives on `deviate-from-Jesus's-line-of-story`; `main` is out of date. Merge so there's one source of truth.
+1. ~~**Saves in the browser.**~~ **Done** - the web build keeps the player's profile in the browser's localStorage, so Continue survives a reload.
+2. ~~**Phones and touch.**~~ **Done** - on-screen Back, Zoom -/+ and drag-to-pan; tapping the name box opens the phone's text prompt; phones held upright are asked to turn sideways. Tested touch-only in a phone-sized browser. *Still to improve:* text is small on a phone screen - a larger UI scale for small screens is the next mobile step.
+3. ~~**One main branch.**~~ **Done** - `main` now holds the current game (fast-forwarded from `deviate-from-Jesus's-line-of-story`). Work on `main` from here.
 
 ## Next steps, in order
 
-1. Fix the three critical issues above.
+1. ~~Fix the three critical issues above.~~ Done.
 2. Episode 1 ending: "Read Acts 9:1-19" plus 2-3 discussion questions on the end screen.
 3. Polish the itch.io page - screenshots, a short trailer GIF, tags (tactics, RPG, Christian, Bible), embed size 1280x720 - and set it to **Public**.
 4. Playtest with one real youth group; fix what confuses them.
