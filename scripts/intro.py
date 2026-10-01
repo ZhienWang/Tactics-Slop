@@ -1,7 +1,7 @@
 """The game's front door: a title screen, and for a New Game the survey that
 decides the hero's class (see scripts/hero.py) - Paul, the hero's advisor,
-introduces it, the player picks the short (12) or long (30) version - or
-skips it and picks a class outright - the questions follow, the player names their character,
+introduces it, the player picks the super short (4), short (12) or long (30)
+version - or skips it and picks a class outright - the questions follow, the player names their character,
 and the result screen shows the class, its skills and Paul's counsel.
 
 Every screen is its own small async loop (awaiting asyncio.sleep(0) each
@@ -160,17 +160,18 @@ async def paul_intro(screen):
 
 
 async def length_screen(screen):
-    """Short survey, long survey, or skip it and pick a class outright?
-    Returns "short", "long" or "pick"."""
-    counts = (len(load_survey_from_csv(short=True)), len(load_survey_from_csv()))
-    options = [("short", f"Short - {counts[0]} questions", "A quick read on who you are."),
-               ("long", f"Long - {counts[1]} questions", "Takes longer, but knows you better."),
+    """Which survey - super short, short or long - or skip it and pick a
+    class outright? Returns "super_short", "short", "long" or "pick"."""
+    count = {version: len(load_survey_from_csv(version=version)) for version in ("super_short", "short", "long")}
+    options = [("super_short", f"Super Short - {count['super_short']} questions", "One question for each letter of your type."),
+               ("short", f"Short - {count['short']} questions", "A quick read on who you are."),
+               ("long", f"Long - {count['long']} questions", "Takes longer, but knows you better."),
                ("pick", "Choose my class", "Skip the questions - pick from all sixteen.")]
     head, body, small = get_font(40, bold=True), get_font(34, bold=True), get_font(26)
-    panel = pygame.Rect(300, 130, SCREEN_WIDTH - 600, 640)
+    panel = pygame.Rect(300, 70, SCREEN_WIDTH - 600, 760)
     index = 0
     while True:
-        rects = [pygame.Rect(panel.x + 80, panel.y + 140 + i * 150, panel.width - 160, 120) for i in range(len(options))]
+        rects = [pygame.Rect(panel.x + 80, panel.y + 130 + i * 140, panel.width - 160, 115) for i in range(len(options))]
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 quit_game()
@@ -196,13 +197,14 @@ async def length_screen(screen):
         for i, (rect, (_, label, detail)) in enumerate(zip(rects, options)):
             screen.button(rect, "", i == index, body)
             title = body.render(f"{i + 1}.  {label}", True, TEXT)
-            screen.surface.blit(title, title.get_rect(midtop=(rect.centerx, rect.y + 22)))
+            screen.surface.blit(title, title.get_rect(midtop=(rect.centerx, rect.y + 20)))
             sub = small.render(detail, True, DIM)
-            screen.surface.blit(sub, sub.get_rect(midtop=(rect.centerx, rect.y + 72)))
+            screen.surface.blit(sub, sub.get_rect(midtop=(rect.centerx, rect.y + 68)))
         await screen.flip()
 
 
-NUMBER_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_KP1: 0, pygame.K_KP2: 1, pygame.K_KP3: 2}
+NUMBER_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3,
+               pygame.K_KP1: 0, pygame.K_KP2: 1, pygame.K_KP3: 2, pygame.K_KP4: 3}
 ROLES = ("Analyst", "Diplomat", "Sentinel", "Explorer")
 
 
@@ -409,7 +411,7 @@ async def result_screen(screen, profile, cls):
 
 
 async def new_game(screen):
-    """Survey (short or long) or a class picked outright -> name -> result,
+    """Survey (super short, short or long) or a class picked outright -> name -> result,
     until the player sets out; the result screen can retake the survey or
     swap in a hand-picked class. Returns the saved profile."""
     classes = load_classes_from_csv()
@@ -424,7 +426,7 @@ async def new_game(screen):
                     mode = await length_screen(screen)
                     continue
             else:
-                questions = load_survey_from_csv(short=mode == "short")
+                questions = load_survey_from_csv(version=mode)
                 hero_type = score_survey(questions, await survey_screen(screen, questions))
         if name is None:
             name = await name_screen(screen)

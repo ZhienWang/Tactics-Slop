@@ -70,8 +70,34 @@ def build(serve=False):
     subprocess.run(args, check=True)
 
 
+# pygbag sizes the game canvas from its own aspect-ratio guess, which can run
+# before the game has set its 1600x900 screen - leaving the game squashed
+# (e.g. into a square) whenever the page isn't exactly 16:9, like an
+# itch.io embed or a resized window. This stylesheet takes over: the canvas
+# is always 16:9, as large as fits, centred - letterboxed, never stretched.
+# !important beats the inline sizes pygbag's script keeps setting.
+CANVAS_FIT_CSS = """<style id="canvas-fit">
+    body { background: #000 !important; }
+    canvas {
+        width: min(100vw, calc(100vh * 16 / 9)) !important;
+        height: min(100vh, calc(100vw * 9 / 16)) !important;
+    }
+</style>
+"""
+
+
+def fit_canvas(index_path):
+    with open(index_path, encoding="utf-8") as f:
+        html = f.read()
+    if 'id="canvas-fit"' not in html:
+        html = html.replace("</head>", CANVAS_FIT_CSS + "</head>", 1)
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(html)
+
+
 def publish():
     built = os.path.join(STAGE, "build", "web")
+    fit_canvas(os.path.join(built, "index.html"))
     # Replace build/web's contents rather than the folder itself, so a local
     # test server running from inside it doesn't block the rebuild on Windows.
     os.makedirs(OUTPUT, exist_ok=True)

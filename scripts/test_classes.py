@@ -175,14 +175,14 @@ def test_sling_is_a_ranged_disarm(board, monkeypatch):
 
 
 def test_the_short_survey_has_twelve_questions_three_per_pair():
-    short = hero.load_survey_from_csv(short=True)
+    short = hero.load_survey_from_csv(version="short")
     assert len(short) == 12
     for a, b in hero.PAIRS:
         assert sum(1 for q in short if {q["answers"][0][1], q["answers"][1][1]} == {a, b}) == 3, (a, b)
 
 
 def test_every_type_is_reachable_from_the_short_survey():
-    short = hero.load_survey_from_csv(short=True)
+    short = hero.load_survey_from_csv(version="short")
     for want in itertools.product(*hero.PAIRS):
         answers = [0 if q["answers"][0][1] in want else 1 for q in short]
         assert hero.score_survey(short, answers) == "".join(want)
@@ -192,3 +192,12 @@ def test_a_tied_pair_goes_to_its_first_answer():
     questions = [{"answers": [("a", "T"), ("b", "F")]}, {"answers": [("a", "T"), ("b", "F")]}]
     assert hero.score_survey(questions, [1, 0])[2] == "F"
     assert hero.score_survey(questions, [0, 1])[2] == "T"
+
+
+def test_the_super_short_survey_asks_one_question_per_letter():
+    four = hero.load_survey_from_csv(version="super_short")
+    assert len(four) == 4
+    assert [{q["answers"][0][1], q["answers"][1][1]} for q in four] == [set(p) for p in hero.PAIRS]
+    for want in itertools.product(*hero.PAIRS):
+        answers = [0 if q["answers"][0][1] in want else 1 for q in four]
+        assert hero.score_survey(four, answers) == "".join(want)

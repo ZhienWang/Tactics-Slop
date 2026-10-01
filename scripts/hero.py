@@ -6,8 +6,9 @@ Sensing/iNtuition, Thinking/Feeling, Judging/Perceiving - and the four
 majorities spell one of sixteen types. Each type is a class
 (data/classes.csv) named for its 16Personalities archetype, with its own
 signature skill (see resolve_signature in game_logic). Every pair has an odd
-number of questions, so it never ties - the full survey asks 7/7/7/9, and
-the short version (the twelve questions marked `short`) 3 per pair. Should
+number of questions, so it never ties - the full survey asks 7/7/7/9, the
+short version (the twelve questions marked `short`) 3 per pair, and the
+super short one (the four marked `super_short`) a single question per pair. Should
 a pair ever tie anyway (an edited survey), it goes to whichever way that
 pair's first question was answered.
 
@@ -38,16 +39,22 @@ HERO_FACE = "assets/portraits/converts/convert_07.png"
 PROFILE_PATH = os.path.join(os.path.expanduser("~"), ".road_to_jerusalem", "profile.json")
 
 
-def load_survey_from_csv(filepath=None, short=False):
-    """The survey's questions - all thirty, or with `short` the ten marked
-    for the quick version."""
+# Survey versions: the full thirty, or only the questions marked in the
+# version's column of survey.csv.
+SURVEY_VERSIONS = ("long", "short", "super_short")
+
+
+def load_survey_from_csv(filepath=None, version="long"):
+    """The survey's questions for `version` - "long" (all thirty), "short"
+    (the twelve marked `short`) or "super_short" (the four marked
+    `super_short`, one deciding each letter)."""
     filepath = filepath or os.path.join(DATA_DIR, "survey.csv")
     with open(filepath, newline="", encoding="utf-8") as f:
         return [
             {"id": int(row["id"]), "question": row["question"],
              "answers": [(row["answer_a"], row["letter_a"]), (row["answer_b"], row["letter_b"])]}
             for row in csv.DictReader(f)
-            if not short or (row.get("short") or "").strip() == "1"
+            if version == "long" or (row.get(version) or "").strip() == "1"
         ]
 
 
