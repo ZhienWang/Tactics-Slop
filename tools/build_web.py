@@ -30,7 +30,7 @@ INCLUDE = ["main.py", "scripts", "data", "assets"]
 EXCLUDE_DIRS = {"__pycache__", "units_original", "unit_svg", "individual_figures"}
 EXCLUDE_FILES = {
     "lego_version_for_fun.jpg", "frame_example.jpg", "world_map_sample.png",
-    "print_svg.py", "svg2png.py", "unit_art.py", "converted_art.py", "horse_art.py",
+    "print_svg.py", "svg2png.py", "unit_art.py", "converted_art.py", "horse_art.py", "hero_art.py",
 }
 EXCLUDE_SUFFIXES = (".mp3", ".wav", ".pyc", ".svg")
 

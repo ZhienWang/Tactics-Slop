@@ -10,3 +10,19 @@ Command,5,4,0,Support,200,100,50
 Fish net,0,3,0,Status,255,255,255
 Shove,0,1,0,Status,220,40,40
 Rally,0,2,0,Support,120,200,160
+Grand Design,10,0,0,Support,150,110,200
+Reason Together,5,2,0,Status,190,160,230
+Marshal,10,0,0,Support,170,120,210
+Disputation,0,1,0,Status,160,110,190
+Intercession,10,3,0,Support,90,210,150
+Peacemaker,5,2,0,Status,110,200,160
+Inspire,10,0,0,Support,120,220,140
+Good News,10,2,0,Status,140,230,120
+Provision,0,1,0,Support,90,170,220
+Shield of Faith,5,1,0,Support,110,160,230
+Arrest,5,1,0,Status,80,140,210
+Breaking Bread,10,0,0,Support,130,190,230
+Sling,0,4,0,Physical,230,190,80
+Psalm,10,0,0,Support,240,200,110
+Bold Venture,0,1,0,Status,250,170,60
+Parable,5,3,0,Status,240,210,120

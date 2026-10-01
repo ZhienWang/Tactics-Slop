@@ -62,3 +62,28 @@ Rally,soothing_waters,target,hit
 @heavenly_light,divine_pillar,target,always
 @heavenly_light,heavenly_rays,target,always
 @heavenly_light,blinding_light,target,always
+Grand Design,focus_converge,caster,hit
+Grand Design,swift_feathers,recipients,hit
+Reason Together,wisdom_glow,target,hit
+Reason Together,divine_conversion,target,convert
+Marshal,haste_wind,recipients,hit
+Disputation,stun_stars,target,hit
+Disputation,fizzle,target,miss
+Intercession,grace_fountain,target,hit
+Peacemaker,silence_seal,target,hit
+Peacemaker,fizzle,target,miss
+Inspire,courage_aura,recipients,hit
+Good News,holy_motes,recipients,hit
+Good News,divine_conversion,target,convert
+Provision,mana_restore,target,hit
+Shield of Faith,aegis_shield,target,hit
+Arrest,snare_bind,target,hit
+Arrest,fizzle,target,miss
+Breaking Bread,renewal_bloom,recipients,hit
+Sling,silence_seal,target,hit
+Psalm,soothing_waters,recipients,hit
+Bold Venture,starburst,target,hit
+Bold Venture,divine_conversion,target,convert
+Bold Venture,bad_omen_eye,caster,miss
+Parable,wisdom_glow,target,hit
+Parable,divine_conversion,target,convert

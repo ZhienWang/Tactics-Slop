@@ -42,6 +42,7 @@ from scripts.config import (
     CLASS_SKILLSETS,
 )
 from scripts.skybox import Skybox
+from scripts.hero import hero_character
 from scripts.assets import (
     load_image_safe,
     load_background_image,
@@ -148,6 +149,12 @@ class Unit:
         self.fled = False
         # Struck to the ground by a scripted scene (see STAGE_SCENES).
         self.fallen = False
+        # Short-lived stat buffs from class skills (see add_buff), and turns
+        # left during which this unit's faith can't be shaken (Shield of Faith).
+        self.buffs = []
+        self.faith_ward_turns = 0
+        # The player's own character, built from the new-game survey.
+        self.is_hero = bool(data.get("hero"))
         self.speech_bubble_until = None
         self.faith_popup = None
         self.magic_attack = data.get("magic_attack", 25)
@@ -337,7 +344,8 @@ def get_skill_targets(unit, skill_name, units_list=None):
         for y in range(MAP_ROWS):
             distance = abs(unit.x - x) + abs(unit.y - y)
             if distance <= max_range:
-                if distance == 0 and not (skill_data["type"] == "Heal" or skill_name in ("Defend", "Lead")):
+                if distance == 0 and not (skill_data["type"] == "Heal" or skill_name in ("Defend", "Lead")
+                                          or skill_name in SELF_CENTRED_SKILLS):
                     continue
                 if units_list is not None and any(u.x == x and u.y == y and u.is_alive() and u.disabled for u in units_list):
                     continue  # a disabled unit stands here - not a target
@@ -797,7 +805,7 @@ def end_morale_buff(unit):
 # Slash doesn't kill: it disarms the target, who then can't act (use Acts
 # or items) for their next DISARM_TURNS turns - they can still move. Other
 # Physical skills (Shoot) still strike the target down.
-DISARM_SKILLS = {"Slash"}
+DISARM_SKILLS = {"Slash", "Sling"}
 DISARM_TURNS = 2
 
 
@@ -834,6 +842,8 @@ def resolve_physical_hit(attacker, target, skill_name, units_list=None):
 
 
 def skill_status_message(skill_name, caster, target):
+    if skill_name in SIGNATURE_SKILLS:
+        return LAST_SIGNATURE_LOG
     if skill_name == "Shove":
         return f"{caster.name} shoves {target.name} back, leaving them reeling!"
     if skill_name == "Command":
@@ -895,6 +905,8 @@ def tick_lead(unit):
 
 def apply_skill_status(skill_name, caster, target, units_list):
     """Applies a Status/Support skill; returns whether it took effect."""
+    if skill_name in SIGNATURE_SKILLS:
+        return resolve_signature(skill_name, caster, target, units_list)
     recipients = lead_recipients(caster, units_list or [caster]) if skill_name == "Lead" else None
     landed = _resolve_skill_status(skill_name, caster, target, units_list)
     report_action(skill_name, caster, target, "hit" if landed else "miss", recipients)
@@ -1123,6 +1135,11 @@ STAGE_SCENES = {
         "subtitle": "Saul rises blind, and his men lead him by the hand into Damascus.",
     },
 }
+# Shown on the end screen once the demo has been played through (its
+# ending scene, or any victory) - this build stops after the opening stage.
+DEMO_THANKS = "Thank you for playing the demo!"
+DEMO_THANKS_DETAIL = "The rest of the road to Jerusalem is still being walked - more is coming soon."
+
 # How long the light shines before the voice speaks, and how long its
 # first blinding flash lasts.
 SCENE_LIGHT_MS = 2600
@@ -1172,6 +1189,9 @@ def begin_turn(unit, units_list=None):
         return {"fled": True, "snared": False, "stunned": False, "despair_log": None,
                 "lead_wore_off": False, "disarmed": False}
     end_morale_buff(unit)
+    tick_buffs(unit)
+    if unit.faith_ward_turns > 0:
+        unit.faith_ward_turns -= 1
     apply_book_growth(unit, BOOK_REGISTRY)
     apply_morale_buff(unit)
     snared = unit.snared_turns > 0
@@ -1249,10 +1269,19 @@ def resolve_faith_attack(preacher, target, skill_name="Preach"):
     return apply_preach(preacher, target, skill_name)
 
 
-def apply_preach(preacher, target, skill_name=None):
+def apply_preach(preacher, target, skill_name=None, gain=None, quiet=False):
     """Preach/Heal's faith change. skill_name, when given, is reported for
-    particle effects along with how it turned out."""
-    gain, shakes_faith = preach_faith_change(preacher, target)
+    particle effects along with how it turned out. Class skills pass their
+    own `gain` (negative shakes faith); `quiet` plays the effects without a
+    second EXP award, for the extra targets of an area skill."""
+    if gain is None:
+        gain, shakes_faith = preach_faith_change(preacher, target)
+    else:
+        shakes_faith = gain < 0
+    report = (lambda *a, **k: queue_effect(*a, announce=False, **k)) if quiet else report_action
+    if shakes_faith and target.faith_ward_turns > 0:
+        report(skill_name, preacher, target, "blocked")
+        return f"{target.name}'s shield of faith holds - their faith can't be shaken!"
     faith_before = target.faith
     target.faith = max(0, min(FAITH_CAP, target.faith + gain))
     actual_gain = target.faith - faith_before
@@ -1262,20 +1291,222 @@ def apply_preach(preacher, target, skill_name=None):
 
     if target.faith >= FAITH_CAP and target.team != "Player":
         convert_unit(target, "Player", now + PREACH_BUBBLE_MS)
-        report_action(skill_name, preacher, target, "convert")
+        report(skill_name, preacher, target, "convert")
         return f"{target.name}'s faith is complete! They join the Player team - you command them now."
     if shakes_faith:
         if target.faith <= 0 and target.team != target.original_team:
             turn_back(target, now + PREACH_BUBBLE_MS)
-            report_action(skill_name, preacher, target, "shaken")
+            report(skill_name, preacher, target, "shaken")
             return f"{preacher.name} breaks {target.name}'s new faith - they turn back to the {target.team} side!"
         if enter_despair_if_faithless(target):
-            report_action(skill_name, preacher, target, "despair")
+            report(skill_name, preacher, target, "despair")
             return f"{preacher.name} shatters {target.name}'s faith - a dark cloud of despair settles over them!"
-        report_action(skill_name, preacher, target, "shaken")
+        report(skill_name, preacher, target, "shaken")
         return f"{preacher.name} sows doubt in {target.name}, shaking their faith down to {round(target.faith)}!"
-    report_action(skill_name, preacher, target, "hit")
+    report(skill_name, preacher, target, "hit")
     return f"{preacher.name} preaches to {target.name}, raising their faith to {round(target.faith)}!"
+
+
+# --- Class signature skills ---
+# Each of the sixteen classes (data/classes.csv, chosen by the new-game
+# survey) carries one signature skill built from the game's own mechanics.
+# Self-centred ones are cast on the caster's own tile and reach everyone
+# within their radius. Each resolver does its own reporting (EXP, effects,
+# banner) and leaves its combat log line in LAST_SIGNATURE_LOG.
+
+SELF_CENTRED_SKILLS = {"Grand Design": 2, "Marshal": 2, "Inspire": 2, "Breaking Bread": 1, "Psalm": 2}
+GRAND_DESIGN_BUFF = {"mv": 1, "speed": 5}
+BUFF_TURNS = 2
+MARSHAL_CT = 30
+REASON_TOGETHER_FAITH = 25
+DISPUTATION_FAITH = 10
+INTERCESSION_FAITH = 30
+PEACEMAKER_TURNS = 2
+INSPIRE_FAITH = 15
+GOOD_NEWS_SHARE = 0.6
+PROVISION_FAITH = 10
+SHIELD_OF_FAITH_TURNS = 2
+ARREST_SNARE_TURNS = 3
+BREAKING_BREAD_FAITH = 20
+BREAKING_BREAD_LOVE = 10
+PSALM_CT = 30
+PSALM_FAITH = 10
+BOLD_VENTURE_CHANCE = 0.55
+BOLD_VENTURE_FAITH = 60
+BOLD_VENTURE_BACKFIRE = 20
+PARABLE_FAITH = 15
+PARABLE_CT = 40
+LAST_SIGNATURE_LOG = ""
+
+# What the battle preview shows for each (besides any faith change).
+SIGNATURE_PREVIEW = {
+    "Grand Design": f"+{GRAND_DESIGN_BUFF['mv']} Move, +{GRAND_DESIGN_BUFF['speed']} Spd",
+    "Reason Together": f"Faith +{REASON_TOGETHER_FAITH}",
+    "Marshal": f"Allies CT +{MARSHAL_CT}",
+    "Disputation": "Stun 1 turn",
+    "Intercession": "Cure all + faith",
+    "Peacemaker": f"Disarm {PEACEMAKER_TURNS} turns",
+    "Inspire": f"Allies faith +{INSPIRE_FAITH}",
+    "Good News": "Preach the crowd",
+    "Provision": "MP full, freed",
+    "Shield of Faith": "Guard + faith ward",
+    "Arrest": f"Snare {ARREST_SNARE_TURNS} + disarm",
+    "Breaking Bread": "Faith + Love",
+    "Psalm": f"Enemies CT -{PSALM_CT}",
+    "Bold Venture": f"{round(BOLD_VENTURE_CHANCE * 100)}%: faith +{BOLD_VENTURE_FAITH}",
+    "Parable": f"Faith +{PARABLE_FAITH}, CT -{PARABLE_CT}",
+}
+# Sling is a Physical skill (a ranged disarm - see DISARM_SKILLS), so it
+# resolves through resolve_physical_hit rather than resolve_signature.
+SIGNATURE_SKILLS = set(SIGNATURE_PREVIEW)
+
+
+def add_buff(unit, stats, turns=BUFF_TURNS):
+    """Adds `stats` ({stat: amount}) now; they last through the unit's next
+    `turns` turns (see tick_buffs)."""
+    for stat, amount in stats.items():
+        setattr(unit, stat, getattr(unit, stat) + amount)
+    unit.buffs.append({"stats": dict(stats), "turns": turns})
+
+
+def tick_buffs(unit):
+    remaining = []
+    for buff in unit.buffs:
+        if buff["turns"] <= 0:
+            for stat, amount in buff["stats"].items():
+                setattr(unit, stat, getattr(unit, stat) - amount)
+        else:
+            buff["turns"] -= 1
+            remaining.append(buff)
+    unit.buffs = remaining
+
+
+def within(center, units_list, radius, team, exclude=None):
+    """Targetable units of `team` within `radius` tiles of `center`."""
+    return [u for u in units_list if targetable(u) and u.team == team and u is not exclude
+            and abs(u.x - center.x) + abs(u.y - center.y) <= radius]
+
+
+def raise_faith(unit, amount):
+    before = unit.faith
+    unit.faith = min(FAITH_CAP, unit.faith + amount)
+    if unit.faith != before:
+        unit.faith_popup = {"amount": round(unit.faith - before), "start": pygame.time.get_ticks()}
+
+
+def cure_statuses(unit):
+    unit.stunned_turns = unit.snared_turns = unit.disarmed_turns = 0
+
+
+def resolve_signature(skill_name, caster, target, units_list):
+    """Resolves a class signature skill; always returns True (its log line,
+    hit or miss, is left in LAST_SIGNATURE_LOG for skill_status_message)."""
+    global LAST_SIGNATURE_LOG
+    units_list = units_list or [caster, target]
+    enemy_team = next((u.team for u in units_list if u.team != caster.team), "Enemy")
+
+    def done(outcome, message, recipients=None):
+        global LAST_SIGNATURE_LOG
+        report_action(skill_name, caster, target, outcome, recipients)
+        LAST_SIGNATURE_LOG = message
+        return True
+
+    def resisted():
+        return random.random() < status_resist_chance(target)
+
+    if skill_name == "Grand Design":
+        allies = within(caster, units_list, SELF_CENTRED_SKILLS[skill_name], caster.team)
+        for u in allies:
+            add_buff(u, GRAND_DESIGN_BUFF)
+        return done("hit", f"{caster.name} lays out a grand design - {len(allies)} allies move faster for {BUFF_TURNS} turns!", allies)
+    if skill_name == "Marshal":
+        allies = within(caster, units_list, SELF_CENTRED_SKILLS[skill_name], caster.team, exclude=caster)
+        for u in allies:
+            u.ct = min(100, u.ct + MARSHAL_CT)
+        if not allies:
+            return done("miss", f"{caster.name} calls the line to order, but no one is near enough to hear.")
+        return done("hit", f"{caster.name} marshals the line - {len(allies)} allies surge forward!", allies)
+    if skill_name == "Inspire":
+        allies = within(caster, units_list, SELF_CENTRED_SKILLS[skill_name], caster.team)
+        for u in allies:
+            raise_faith(u, INSPIRE_FAITH)
+        return done("hit", f"{caster.name} inspires the company - {len(allies)} hearts lift! (+{INSPIRE_FAITH} faith)", allies)
+    if skill_name == "Breaking Bread":
+        allies = within(caster, units_list, SELF_CENTRED_SKILLS[skill_name], caster.team)
+        for u in allies:
+            raise_faith(u, BREAKING_BREAD_FAITH)
+            add_buff(u, {"love": BREAKING_BREAD_LOVE})
+        return done("hit", f"{caster.name} breaks bread with {len(allies)} companions - faith and love grow!", allies)
+    if skill_name == "Psalm":
+        radius = SELF_CENTRED_SKILLS[skill_name]
+        allies = within(caster, units_list, radius, caster.team)
+        foes = within(caster, units_list, radius, enemy_team)
+        for u in allies:
+            raise_faith(u, PSALM_FAITH)
+        for u in foes:
+            u.ct = max(0, u.ct - PSALM_CT)
+        return done("hit", f"{caster.name} sings a psalm - {len(foes)} foes fall still and {len(allies)} allies are refreshed.", allies + foes)
+    if skill_name == "Reason Together":
+        LAST_SIGNATURE_LOG = apply_preach(caster, target, skill_name, gain=REASON_TOGETHER_FAITH)
+        return True
+    if skill_name == "Disputation":
+        if resisted():
+            return done("miss", f"{target.name} keeps a cool head and won't be drawn into {caster.name}'s dispute.")
+        target.stunned_turns = max(target.stunned_turns, 1)
+        apply_preach(caster, target, skill_name, gain=DISPUTATION_FAITH, quiet=True)
+        return done("hit", f"{caster.name} ties {target.name} in knots of argument - they're left reeling!")
+    if skill_name == "Intercession":
+        target.despair_turns = 0
+        cure_statuses(target)
+        raise_faith(target, INTERCESSION_FAITH)
+        return done("hit", f"{caster.name} intercedes for {target.name} - every burden is lifted! (+{INTERCESSION_FAITH} faith)")
+    if skill_name == "Peacemaker":
+        if resisted():
+            return done("miss", f"{target.name} won't lay down their arms - not yet.")
+        target.disarmed_turns = max(target.disarmed_turns, PEACEMAKER_TURNS)
+        return done("hit", f"{caster.name} makes peace with {target.name} - they lower their weapons for {PEACEMAKER_TURNS} turns!")
+    if skill_name == "Good News":
+        crowd = [target] + within(target, units_list, 1, target.team, exclude=target)
+        chance = faith_hit_chance(caster)
+        reached = 0
+        for u in crowd:
+            if random.random() < chance:
+                gain = preach_faith_change(caster, u)[0] * GOOD_NEWS_SHARE
+                apply_preach(caster, u, skill_name, gain=gain, quiet=u is not target)
+                reached += 1
+        if not reached:
+            return done("miss", f"{caster.name} shares the good news, but the crowd isn't listening.")
+        LAST_SIGNATURE_LOG = f"{caster.name} spreads the good news - {reached} of {len(crowd)} hear it gladly!"
+        return True
+    if skill_name == "Provision":
+        target.mp = target.max_mp
+        cure_statuses(target)
+        raise_faith(target, PROVISION_FAITH)
+        return done("hit", f"{caster.name} resupplies {target.name} - MP restored and ready to go!")
+    if skill_name == "Shield of Faith":
+        target.guarded = True
+        target.faith_ward_turns = max(target.faith_ward_turns, SHIELD_OF_FAITH_TURNS)
+        return done("hit", f"{caster.name} raises the shield of faith over {target.name} - guarded, and their faith can't be shaken!")
+    if skill_name == "Arrest":
+        if resisted():
+            return done("miss", f"{target.name} slips {caster.name}'s grasp!")
+        target.snared_turns = max(target.snared_turns, ARREST_SNARE_TURNS)
+        target.disarmed_turns = max(target.disarmed_turns, 1)
+        return done("hit", f"{caster.name} arrests {target.name} - bound for {ARREST_SNARE_TURNS} turns!")
+    if skill_name == "Bold Venture":
+        if random.random() < BOLD_VENTURE_CHANCE:
+            LAST_SIGNATURE_LOG = "A bold venture pays off! " + apply_preach(caster, target, skill_name, gain=BOLD_VENTURE_FAITH)
+            return True
+        caster.faith = max(0, caster.faith - BOLD_VENTURE_BACKFIRE)
+        caster.faith_popup = {"amount": -BOLD_VENTURE_BACKFIRE, "start": pygame.time.get_ticks()}
+        enter_despair_if_faithless(caster)
+        return done("miss", f"{caster.name}'s bold venture backfires - {target.name} scoffs, and {caster.name}'s faith is shaken. (-{BOLD_VENTURE_BACKFIRE})")
+    if skill_name == "Parable":
+        target.ct = max(0, target.ct - PARABLE_CT)
+        LAST_SIGNATURE_LOG = f"{target.name} hangs on every word of the parable. " + apply_preach(caster, target, skill_name, gain=PARABLE_FAITH)
+        return True
+    LAST_SIGNATURE_LOG = f"{caster.name} uses {skill_name}."
+    return True
 
 
 ANKH_MIN_REVIVE_FAITH = 10
@@ -1509,6 +1740,18 @@ def predict_action(attacker, target, skill_name, units_list=None):
     elif skill_name == "Lead":
         count = len(lead_recipients(attacker, units_list or [attacker]))
         chance, outcome = 1.0, f"Love +{LEAD_LOVE_BONUS} x{count}"
+    elif skill_name in SIGNATURE_SKILLS:
+        chance, outcome = 1.0, SIGNATURE_PREVIEW[skill_name]
+        faith_shift = {"Reason Together": REASON_TOGETHER_FAITH, "Parable": PARABLE_FAITH, "Disputation": DISPUTATION_FAITH,
+                       "Intercession": INTERCESSION_FAITH, "Provision": PROVISION_FAITH, "Bold Venture": BOLD_VENTURE_FAITH}
+        if skill_name in faith_shift:
+            faith_after = min(FAITH_CAP, target.faith + faith_shift[skill_name])
+        if skill_name in ("Disputation", "Peacemaker", "Arrest"):
+            chance = 1 - status_resist_chance(target)
+        elif skill_name == "Good News":
+            chance = faith_hit_chance(attacker)
+        elif skill_name == "Bold Venture":
+            chance = BOLD_VENTURE_CHANCE
     else:
         chance, outcome = 1.0, skill_name
     return {"chance": chance, "faith_before": target.faith, "faith_after": faith_after, "outcome": outcome}
@@ -2213,7 +2456,7 @@ def draw_prop(surface, sx, sy, prop, zoom=1.0, light=1.0):
     surface.blit(sprite, (round(base_x - sprite_width / 2), round(base_y - sprite_height)))
 
 
-async def main(stage=None, equipment_loadout=None, book_loadout=None):
+async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None):
     global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, EQUIPMENT_REGISTRY, BOOK_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT, MAP_PROPS, PROP_TILES, ESCAPE_TILES
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -2323,7 +2566,15 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
             apply_level_bonuses(unit)
         return spawned
 
+    # The player's own character (from the new-game survey) joins the party.
+    if hero:
+        hero_entry = hero_character(hero, CHARACTER_ROSTER, MAP_DATA, PROP_TILES)
+        if hero_entry:
+            CHARACTER_ROSTER.append(hero_entry)
+
     units = spawn_units()
+    # Faces already on the field aren't handed out again to converts.
+    CONVERT_FACES_USED.update(u.face_portrait_path for u in units if u.face_portrait_path)
     # Only the Player side carries a satchel of supplies into battle.
     team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
     dialogues = load_dialogues_from_csv(map_id=stage["node_id"] if stage else FIRST_STAGE_NODE)
@@ -3254,6 +3505,11 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
             screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 160)))
             log_surf = font.render(combat_log, True, (190, 190, 190))
             screen.blit(log_surf, log_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 195)))
+            if is_victory:
+                thanks = get_font(40, bold=True).render(DEMO_THANKS, True, theme_color)
+                screen.blit(thanks, thanks.get_rect(center=(game_over_content.centerx, game_over_content.y + 270)))
+                detail = font.render(DEMO_THANKS_DETAIL, True, (230, 230, 230))
+                screen.blit(detail, detail.get_rect(center=(game_over_content.centerx, game_over_content.y + 315)))
 
             pygame.draw.rect(screen, theme_color, restart_button)
             pygame.draw.rect(screen, (255, 255, 255), restart_button, 2)
@@ -3294,12 +3550,12 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None):
 FIRST_STAGE_NODE = "damascus"
 
 
-async def run_first_stage():
+async def run_first_stage(hero=None):
     """Boots straight into the first stage's battle, skipping the world
     map. The world map (scripts/world_map.py) still works and is still
     reachable by running that module - the game's entrypoints just don't
     route through it while it's hidden."""
-    return await main(load_stage_manifest().get(FIRST_STAGE_NODE))
+    return await main(load_stage_manifest().get(FIRST_STAGE_NODE), hero=hero)
 
 
 if __name__ == '__main__':

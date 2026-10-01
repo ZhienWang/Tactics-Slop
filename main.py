@@ -1,4 +1,5 @@
-"""Web entrypoint (pygbag): boots straight into the first stage's battle.
+"""Web entrypoint (pygbag): the title screen (New Game runs the class survey),
+then the first stage's battle.
 
 pygbag's generated loader hardcodes the entry file to `assets/main.py`
 inside the packaged bundle, so this file must exist at the project root
@@ -10,11 +11,11 @@ Build the web version with tools/build_web.py.
 """
 import asyncio
 import pygame
-from scripts.game_logic import run_first_stage
+from scripts.intro import start_game
 
 
 async def main():
-    await run_first_stage()
+    await start_game()
     # Shut pygame down only once the game is actually over. In the browser
     # asyncio.run() returns immediately (the game keeps running on the
     # page's event loop), so cleanup placed *after* asyncio.run() - as the

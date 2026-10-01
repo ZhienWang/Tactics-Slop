@@ -1,0 +1,31 @@
+id,question,answer_a,letter_a,answer_b,letter_b,short
+1,"After a long day on the road, you would rather...",Share supper and stories around the fire with the whole caravan,E,Find a quiet spot to pray and think alone,I,1
+2,"When you arrive in a new town, you...",Head straight to the marketplace to meet people,E,Get to know one or two people well first,I,
+3,The elders ask for someone to read aloud in the synagogue. You...,Stand up gladly,E,"Hope someone else is chosen, though you'd do it",I,
+4,Your best ideas usually come...,While talking things through with others,E,While alone with your own thoughts,I,1
+5,"A week spent mostly alone, copying scrolls, sounds...",Restful and satisfying,I,Draining - you would miss the company,E,
+6,At a wedding feast you are more likely to...,Move from table to table,E,Stay deep in conversation with a few old friends,I,
+7,Someone you have just met asks about your life. You...,Open up easily,E,Take your time before sharing much,I,1
+8,"When a teacher explains a parable, you care most about...",What it tells you to actually do tomorrow,S,The deeper meanings hidden in it,N,1
+9,"Planning a journey, you trust...",The roads and inns others have already tested,S,Your sense that a new route will open up,N,
+10,You would rather be known as...,Practical and sensible,S,Imaginative and insightful,N,1
+11,A cart wheel breaks on the road. You...,Mend it the way it has always been done,S,Try a clever fix no one has tried before,N,
+12,"Walking into a crowded room, you notice first...",The details of what is in front of you,S,The patterns - and what they might mean,N,1
+13,The stories you enjoy most are about...,Real people and real events,S,"Visions, prophecy and what could be",N,
+14,"When the elders speak of the age to come, you find it...",Stirring - you think about it often,N,Less pressing than today's work,S,
+15,A friend's plan is badly flawed. You...,Tell them plainly so they can fix it,T,"Encourage them first, then gently raise your concerns",F,1
+16,"In a dispute between two brothers, you give more weight to...",What is fair by the rules,T,How each of them is feeling,F,
+17,You would rather be thought...,Wise and just,T,Kind and compassionate,F,1
+18,"Choosing companions for a dangerous mission, you pick...",The most capable,T,Those who will stick together through anything,F,
+19,Someone weeps in front of you. You...,Look for what can be done to solve the problem,T,Sit with them in their grief first,F,1
+20,A good argument should be won by...,The strongest reasons,T,The one who shows the most understanding,F,
+21,Correcting someone else's mistake is...,Easy - the truth matters more than comfort,T,Hard - you worry about hurting them,F,
+22,"Before a journey, you...",Pack days ahead from a list,J,Pack the morning you leave,P,1
+23,Your ideal day...,Follows a plan you made the night before,J,Unfolds as it comes,P,
+24,"When plans suddenly change, you feel...",Unsettled,J,"Curious, even excited",P,
+25,You work best...,Finishing one task before starting the next,J,Moving between several at once,P,
+26,"A decision that could wait, you...",Settle now and be done with it,J,Leave open in case something better comes along,P,1
+27,Your belongings are usually...,In their proper places,J,Wherever you last used them,P,
+28,"Asked to organise a festival, you...",Set the order of the day early,J,Gather good people and trust it will come together,P,
+29,Deadlines are...,"To be met - early, if possible",J,A push to finish in one last burst,P,
+30,An unknown village appears off the road. You...,Keep to the route you set,J,Go and see what's there,P,1
