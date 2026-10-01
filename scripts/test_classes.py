@@ -201,3 +201,24 @@ def test_the_super_short_survey_asks_one_question_per_letter():
     for want in itertools.product(*hero.PAIRS):
         answers = [0 if q["answers"][0][1] in want else 1 for q in four]
         assert hero.score_survey(four, answers) == "".join(want)
+
+
+def test_the_web_build_keeps_the_profile_in_browser_storage(tmp_path):
+    class FakeLocalStorage:
+        def __init__(self):
+            self.items = {}
+
+        def setItem(self, key, value):
+            self.items[key] = value
+
+        def getItem(self, key):
+            return self.items.get(key)
+
+    storage = FakeLocalStorage()
+    assert hero.load_profile(storage=storage) is None  # nothing saved yet
+    hero.save_profile({"name": "Lydia", "type": "ENFJ"}, storage=storage)
+    assert hero.BROWSER_PROFILE_KEY in storage.items
+    assert not (tmp_path / "profile.json").exists()
+    assert hero.load_profile(storage=storage) == {"name": "Lydia", "type": "ENFJ"}
+    storage.items[hero.BROWSER_PROFILE_KEY] = "not json"
+    assert hero.load_profile(storage=storage) is None

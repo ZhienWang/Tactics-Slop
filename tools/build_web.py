@@ -82,6 +82,15 @@ CANVAS_FIT_CSS = """<style id="canvas-fit">
         width: min(100vw, calc(100vh * 16 / 9)) !important;
         height: min(100vh, calc(100vw * 9 / 16)) !important;
     }
+    /* Phones held upright: the 16:9 game is tiny, so ask for landscape. */
+    @media (orientation: portrait) and (max-width: 900px) {
+        body::after {
+            content: "Turn your device sideways to play";
+            position: fixed; left: 0; right: 0; top: 0; padding: 14px;
+            background: rgba(40, 28, 16, 0.92); color: #ffd76e;
+            font: bold 18px sans-serif; text-align: center; z-index: 10;
+        }
+    }
 </style>
 """
 

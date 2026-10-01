@@ -323,15 +323,39 @@ async def survey_screen(screen, questions):
     return answers
 
 
+def browser_prompt(question, default):
+    """The browser's own text prompt - how a phone (which never shows its
+    keyboard for the game canvas) types a name. None outside the browser or
+    if the player cancels."""
+    if sys.platform != "emscripten":
+        return None
+    try:
+        import platform
+        answer = platform.window.prompt(question, default)
+    except Exception:
+        return None
+    return None if answer is None or str(answer) in ("null", "undefined") else str(answer)
+
+
 async def name_screen(screen):
-    """Returns the hero's name (the default if left blank)."""
+    """Returns the hero's name (the default if left blank). Tapping the name
+    box in the browser opens the device's text prompt; OK confirms."""
     name = ""
     prompt_font, input_font, hint_font = get_font(40, bold=True), get_font(44), get_font(24)
-    panel = pygame.Rect(350, 250, SCREEN_WIDTH - 700, 380)
+    panel = pygame.Rect(350, 250, SCREEN_WIDTH - 700, 420)
+    box = pygame.Rect(panel.x + 90, panel.y + 150, panel.width - 180, 80)
+    ok_rect = pygame.Rect(panel.centerx - 110, panel.y + 300, 220, 64)
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 quit_game()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if ok_rect.collidepoint(event.pos):
+                    return name.strip() or DEFAULT_HERO_NAME
+                if box.collidepoint(event.pos):
+                    typed = browser_prompt("What is your name?", name or DEFAULT_HERO_NAME)
+                    if typed is not None:
+                        name = typed.strip()[:MAX_NAME_LENGTH]
             if event.type == pygame.KEYDOWN:
                 if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     return name.strip() or DEFAULT_HERO_NAME
@@ -343,15 +367,15 @@ async def name_screen(screen):
         screen.panel(panel)
         prompt = prompt_font.render("And what is your name?", True, GOLD)
         screen.surface.blit(prompt, prompt.get_rect(midtop=(panel.centerx, panel.y + 60)))
-        box = pygame.Rect(panel.x + 90, panel.y + 150, panel.width - 180, 80)
         pygame.draw.rect(screen.surface, (24, 18, 12), box, border_radius=8)
         pygame.draw.rect(screen.surface, GOLD, box, 2, border_radius=8)
         shown = name or DEFAULT_HERO_NAME
         caret = "|" if name and (pygame.time.get_ticks() // 500) % 2 else ""
         text = input_font.render(shown + caret, True, TEXT if name else (120, 110, 95))
         screen.surface.blit(text, text.get_rect(midleft=(box.x + 24, box.centery)))
-        hint = hint_font.render("Type a name and press Enter", True, DIM)
-        screen.surface.blit(hint, hint.get_rect(midtop=(panel.centerx, box.bottom + 30)))
+        hint = hint_font.render("Type a name (or tap the box) and press Enter / OK", True, DIM)
+        screen.surface.blit(hint, hint.get_rect(midtop=(panel.centerx, box.bottom + 18)))
+        screen.button(ok_rect, "OK", ok_rect.collidepoint(pygame.mouse.get_pos()), prompt_font)
         await screen.flip()
 
 

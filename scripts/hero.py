@@ -20,6 +20,7 @@ the survey's result screen.
 import csv
 import json
 import os
+import sys
 from collections import deque
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,6 +38,20 @@ ROLE_COLORS = {
 HERO_TOKEN = "assets/hero_{role}.png"
 HERO_FACE = "assets/portraits/converts/convert_07.png"
 PROFILE_PATH = os.path.join(os.path.expanduser("~"), ".road_to_jerusalem", "profile.json")
+# In the browser (the pygbag web build) files vanish on reload, so the
+# profile lives in the page's localStorage under this key instead.
+BROWSER_PROFILE_KEY = "road_to_jerusalem.profile"
+
+
+def browser_storage():
+    """The browser's localStorage in the web build, else None."""
+    if sys.platform != "emscripten":
+        return None
+    try:
+        import platform  # pygbag's bridge to the page's JavaScript
+        return platform.window.localStorage
+    except Exception:
+        return None
 
 
 # Survey versions: the full thirty, or only the questions marked in the
@@ -91,8 +106,16 @@ def score_survey(questions, answers):
     return "".join(pick(a, b) for a, b in PAIRS)
 
 
-def save_profile(profile, path=PROFILE_PATH):
-    """Best effort - a browser build or a read-only home just won't remember."""
+def save_profile(profile, path=PROFILE_PATH, storage=None):
+    """Best effort: the browser's localStorage in the web build, a file
+    otherwise - a read-only home just won't remember."""
+    storage = storage if storage is not None else browser_storage()
+    if storage is not None:
+        try:
+            storage.setItem(BROWSER_PROFILE_KEY, json.dumps(profile))
+        except Exception:
+            pass
+        return
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -101,11 +124,20 @@ def save_profile(profile, path=PROFILE_PATH):
         pass
 
 
-def load_profile(path=PROFILE_PATH):
+def load_profile(path=PROFILE_PATH, storage=None):
+    storage = storage if storage is not None else browser_storage()
     try:
-        with open(path, encoding="utf-8") as f:
-            profile = json.load(f)
-    except (OSError, ValueError):
+        if storage is not None:
+            raw = storage.getItem(BROWSER_PROFILE_KEY)
+            if raw is None or str(raw) in ("", "null", "undefined"):
+                return None
+            profile = json.loads(str(raw))
+        else:
+            with open(path, encoding="utf-8") as f:
+                profile = json.load(f)
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(profile, dict):
         return None
     return profile if profile.get("type") in load_classes_from_csv() and profile.get("name") else None
 

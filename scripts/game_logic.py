@@ -1659,6 +1659,10 @@ def draw_dialogue_window(surface, speaker, text, frame=None):
 # flipped to the cursor's other side when it would run off the screen.
 MENU_CURSOR_OFFSET = (18, 12)
 ACTION_MENU_STATES = ("MENU", "SUBMENU_ACT", "SUBMENU_ITEM")
+# States the on-screen Back button (for touch screens) backs out of.
+BACK_STATES = ("SUBMENU_ACT", "SUBMENU_ITEM", "MOVE_SELECT", "TARGET_SELECT")
+# The combatant stats panel in the top-left of the HUD.
+STATS_PANEL_RECT = pygame.Rect(10, 10, 280, 180)
 MENU_SCREEN_MARGIN = 10
 
 
@@ -2691,6 +2695,13 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
     inspected_unit = None
     rotate_left_button = pygame.Rect(10, 205, 56, 32)
     rotate_right_button = pygame.Rect(76, 205, 56, 32)
+    # Touch-friendly controls (phones have no keys or right-click): zoom
+    # buttons beside Rotate, and a Back button whenever there's something to
+    # back out of. Dragging on empty space around the map pans it.
+    zoom_out_button = pygame.Rect(152, 205, 56, 32)
+    zoom_in_button = pygame.Rect(218, 205, 56, 32)
+    back_button = pygame.Rect(10, 252, 122, 40)
+    pan_anchor = None
     game_over_panel_rect = pygame.Rect(SCREEN_WIDTH // 2 - 450, SCREEN_HEIGHT // 2 - 250, 900, 500)
     game_over_content = frame_content_rect(game_over_panel_rect, ui_frame) if ui_frame else game_over_panel_rect.inflate(-32, -32)
     restart_button = pygame.Rect(game_over_content.centerx - 60, game_over_content.bottom - 60, 120, 40)
@@ -2933,6 +2944,14 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
             elif game_state == "PROJECTILE":
                 continue
 
+            elif event.type == pygame.MOUSEMOTION and pan_anchor is not None:
+                (start_x, start_y), start_origin_x, start_origin_y = pan_anchor
+                origin_x = start_origin_x + event.pos[0] - start_x
+                origin_y = start_origin_y + event.pos[1] - start_y
+
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and pan_anchor is not None:
+                pan_anchor = None
+
             elif event.type == pygame.MOUSEMOTION and game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
                 hit_tile = screen_to_map(event.pos[0], event.pos[1], origin_x, origin_y, MAP_DATA, rotation, map_zoom)
                 if hit_tile is not None:
@@ -2962,6 +2981,29 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
                     game_state = "MENU"
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
+                back_requested = False
+                if event.button == 1 and show_hud and game_state not in ("TICKING", "GAME_OVER", "SCENE"):
+                    if back_button.collidepoint(event.pos) and game_state in BACK_STATES:
+                        if game_state in ("SUBMENU_ACT", "SUBMENU_ITEM"):
+                            menu_index = 1 if game_state == "SUBMENU_ACT" else 2
+                            current_menu = main_menu
+                            selected_item = None
+                            game_state = "MENU"
+                            combat_log = "Back to the action menu."
+                            continue
+                        back_requested = True  # handled like a right-click below
+                    elif zoom_in_button.collidepoint(event.pos) or zoom_out_button.collidepoint(event.pos):
+                        step = 0.1 if zoom_in_button.collidepoint(event.pos) else -0.1
+                        map_zoom = max(0.5, min(2.0, map_zoom + step))
+                        combat_log = f"Zoom: {map_zoom:.1f}x"
+                        continue
+                if (event.button == 1 and not back_requested
+                        and screen_to_map(event.pos[0], event.pos[1], origin_x, origin_y, MAP_DATA, rotation, map_zoom) is None
+                        and not any(r.collidepoint(event.pos) for r in (rotate_left_button, rotate_right_button, zoom_in_button,
+                                                                         zoom_out_button, back_button, STATS_PANEL_RECT))
+                        and not (game_state in ACTION_MENU_STATES and active_unit
+                                 and action_menu_layout(current_menu, ui_frame, menu_anchor)[0].collidepoint(event.pos))):
+                    pan_anchor = (event.pos, origin_x, origin_y)
                 if event.button == 4:  # Mouse wheel up
                     stats_scroll = max(0, stats_scroll - 1)
                 elif event.button == 5:  # Mouse wheel down
@@ -2975,7 +3017,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
                         rotation = (rotation + 1) % 4
                         combat_log = "Rotated map right."
                         continue
-                if event.button == 3 and game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
+                if (event.button == 3 or back_requested) and game_state in ["MOVE_SELECT", "TARGET_SELECT"]:
                     cursor_x, cursor_y = active_unit.x, active_unit.y
                     valid_tiles = []
                     if game_state == "MOVE_SELECT":
@@ -3530,6 +3572,17 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
             screen.blit(font.render("<", True, (255, 255, 255)), (rotate_left_button.x + 20, rotate_left_button.y + 6))
             screen.blit(font.render(">", True, (255, 255, 255)), (rotate_right_button.x + 20, rotate_right_button.y + 6))
             screen.blit(font.render("Rotate", True, (220, 220, 220)), (rotate_left_button.x, rotate_left_button.y - 18))
+            for button, label in ((zoom_out_button, "-"), (zoom_in_button, "+")):
+                pygame.draw.rect(screen, (30, 30, 40), button)
+                pygame.draw.rect(screen, CURSOR_COLOR, button, 2)
+                text = font.render(label, True, (255, 255, 255))
+                screen.blit(text, text.get_rect(center=button.center))
+            screen.blit(font.render("Zoom", True, (220, 220, 220)), (zoom_out_button.x, zoom_out_button.y - 18))
+            if game_state in BACK_STATES and active_unit and not is_ai_team(active_unit.team):
+                pygame.draw.rect(screen, (60, 30, 30), back_button)
+                pygame.draw.rect(screen, (255, 140, 120), back_button, 2)
+                text = font.render("< Back", True, (255, 255, 255))
+                screen.blit(text, text.get_rect(center=back_button.center))
             panel_height = 80 if invalid_assets else 60
             panel_rect = pygame.Rect(10, SCREEN_HEIGHT - panel_height, SCREEN_WIDTH - 20, panel_height)
             pygame.draw.rect(screen, (15, 15, 25), panel_rect)
