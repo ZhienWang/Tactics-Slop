@@ -61,6 +61,8 @@ def human_like_score(game_score):
             # A disciple running for the exits: net them first, else preach.
             if skill_name == "Fish net":
                 return None if target.snared_turns > 0 else 95
+            if skill_name == "Persecute":
+                return 88
             if kind == "Faith":
                 return 85
         if kind == "Heal":
@@ -136,6 +138,7 @@ def run_battle(stage, seed, max_turns=400):
     units = [g.Unit(c) for c in g.CHARACTER_ROSTER]
     for u in units:
         g.apply_level_bonuses(u)
+    g.apply_stage_skill_swaps(stage["node_id"], units)
     party = {c["name"] for c in g.CHARACTER_ROSTER if c["team"] == "Player"}
     stats = collections.Counter()
     turns = 0
@@ -217,6 +220,7 @@ def run_battle(stage, seed, max_turns=400):
     # and how many fled the field.
     stats["converted"] = sum(1 for u in units if u.converted and u.is_alive())
     stats["fled"] = sum(1 for u in units if u.fled)
+    stats["arrested"] = sum(1 for u in units if u.arrested)
     return ("Player" if stats["scene"] else g.get_winner(units)) or "timeout", turns, stats
 
 
@@ -253,7 +257,7 @@ def simulate_stage(node, stage, runs, max_turns, policy):
     print(f"\n=== {node}: {stage['title']} ({runs} battles, player: {policy}) ===")
     print(f"  Outcome        {dict(outcomes)}")
     print(f"  Length         {row['turns']:.0f} unit-turns (min {min(lengths)}, max {max(lengths)}), ~{minutes:.0f} min of real play")
-    print(f"  Enemies        {row['enemies']:.0f}: converted {row['converted']:.1f}, fled {avg.get('fled', 0):.1f} (escaped {avg.get('escaped', 0):.1f}), killed {avg.get('kills_by_Player', 0):.1f}, turned back {avg.get('event_@turned_back_hit', 0):.1f}")
+    print(f"  Enemies        {row['enemies']:.0f}: converted {row['converted']:.1f}, fled {avg.get('fled', 0):.1f} (escaped {avg.get('escaped', 0):.1f}), arrested {avg.get('arrested', 0):.1f}, killed {avg.get('kills_by_Player', 0):.1f}, turned back {avg.get('event_@turned_back_hit', 0):.1f}")
     print(f"  Your party     {row['party']:.0f} units, {row['lost']:.1f} lost per battle")
     if preach_tries:
         print(f"  Preach         {preach_tries:.1f} player/enemy attempts, "

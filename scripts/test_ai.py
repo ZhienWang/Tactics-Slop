@@ -1551,3 +1551,41 @@ def test_the_damascus_scene_has_its_dialogue():
     speakers = [speaker for speaker, _ in lines]
     assert "Jesus" in speakers and "Saul" in speakers
     assert any("why are you persecuting me" in text for _, text in lines)
+
+
+# --- Persecute (Saul's band on the Road to Damascus) ---
+
+def test_persecute_takes_ten_faith_and_slows_without_stacking():
+    game_logic.SKILL_REGISTRY = {"Persecute": {"mp_cost": 0, "range": 1, "damage": 0, "type": "Status"}}
+    saul = make_unit("Paul", "Player", 0, 0, 200, 0, ["Persecute"])
+    disciple = make_unit("Ananias", "Enemy", 0, 1, 100, 0, [], char_class="Disciple")
+    game_logic.apply_skill_status("Persecute", saul, disciple, [saul, disciple])
+    assert disciple.faith == 100 - game_logic.PERSECUTE_FAITH
+    assert disciple.mv == 3 - game_logic.PERSECUTE_SLOW
+    game_logic.apply_skill_status("Persecute", saul, disciple, [saul, disciple])
+    assert disciple.mv == 3 - game_logic.PERSECUTE_SLOW  # refreshed, not stacked
+    for _ in range(game_logic.PERSECUTE_TURNS + 1):
+        game_logic.begin_turn(disciple)
+    assert disciple.mv == 3
+
+
+def test_a_disciple_persecuted_to_zero_faith_is_arrested():
+    saul = make_unit("Paul", "Player", 0, 0, 200, 0, ["Persecute"])
+    disciple = make_unit("Timon", "Enemy", 0, 1, game_logic.PERSECUTE_FAITH, 0, [], char_class="Disciple")
+    other = make_unit("Nicolas", "Enemy", 3, 3, 100, 0, [], char_class="Disciple")
+    units = [saul, disciple, other]
+    game_logic.apply_skill_status("Persecute", saul, disciple, units)
+    assert disciple.arrested and not disciple.is_alive()
+    assert game_logic.enemies_standing(units) == [other]
+
+
+def test_the_damascus_party_persecutes_instead_of_preaching():
+    saul = make_unit("Paul", "Player", 0, 0, 200, 0, ["Preach", "Heal"])
+    hero = make_unit("Lydia", "Player", 1, 0, 140, 0, ["Preach", "Inspire"])
+    disciple = make_unit("Ananias", "Enemy", 5, 5, 100, 0, ["Preach"], char_class="Disciple")
+    game_logic.apply_stage_skill_swaps("damascus", [saul, hero, disciple])
+    assert saul.skills == ["Persecute", "Heal"] and hero.skills == ["Persecute", "Inspire"]
+    assert disciple.skills == ["Preach"]  # the disciples still preach
+    other = make_unit("Peter", "Player", 0, 0, 100, 0, ["Preach"])
+    game_logic.apply_stage_skill_swaps("jerusalem", [other])
+    assert other.skills == ["Preach"]

@@ -155,6 +155,8 @@ class Unit:
         self.faith_ward_turns = 0
         # The player's own character, built from the new-game survey.
         self.is_hero = bool(data.get("hero"))
+        # Taken off the field by Persecute (see arrest).
+        self.arrested = False
         self.speech_bubble_until = None
         self.faith_popup = None
         self.magic_attack = data.get("magic_attack", 25)
@@ -713,6 +715,7 @@ EVENT_BANNER_NAMES = {
     "@fled": "Fled!",
     "@escaped": "Escaped!",
     "@heavenly_light": "A Light from Heaven",
+    "@arrested": "Arrested!",
 }
 SKILL_BANNER_MS = 1200
 # With more banners waiting, each is shown for less time so they keep up.
@@ -1161,6 +1164,45 @@ def strike_down(unit):
     queue_effect("@heavenly_light", unit, unit)
 
 
+# Persecute - what Saul's band has instead of Preach on the Road to Damascus
+# (see STAGE_SKILL_SWAPS): it never misses, takes a fixed PERSECUTE_FAITH
+# off the target's faith and slows them by PERSECUTE_SLOW Move for their
+# next PERSECUTE_TURNS turns (a fresh Persecute refreshes the slow rather
+# than stacking it). A disciple whose faith it breaks to 0 is arrested -
+# bound and taken off the field, the way Saul dragged believers to prison.
+PERSECUTE_FAITH = 10
+PERSECUTE_SLOW = 1
+PERSECUTE_TURNS = 2
+
+# Skills a stage swaps out for the Player side - every Player unit on it,
+# the hero included: {stage: {skill: replacement}}.
+STAGE_SKILL_SWAPS = {"damascus": {"Preach": "Persecute"}}
+
+
+def apply_stage_skill_swaps(stage_id, units):
+    swaps = STAGE_SKILL_SWAPS.get(stage_id, {})
+    for unit in units:
+        if unit.team == "Player":
+            unit.skills = [swaps.get(skill, skill) for skill in unit.skills]
+
+
+def slow_unit(unit, amount, turns):
+    """-amount Move for the unit's next `turns` turns; a unit already slowed
+    has its slow refreshed instead of stacked."""
+    for buff in unit.buffs:
+        if buff.get("slow"):
+            buff["turns"] = turns
+            return
+    add_buff(unit, {"mv": -amount}, turns)
+    unit.buffs[-1]["slow"] = True
+
+
+def arrest(unit):
+    unit.arrested = True
+    queue_effect("@arrested", unit, unit)
+    kill_unit(unit)
+
+
 FAITH_TRANSFER_RATE = 0.2
 
 # A Player unit whose faith is shaken all the way to 0 falls into Despair:
@@ -1355,6 +1397,8 @@ SIGNATURE_PREVIEW = {
     "Psalm": f"Enemies CT -{PSALM_CT}",
     "Bold Venture": f"{round(BOLD_VENTURE_CHANCE * 100)}%: faith +{BOLD_VENTURE_FAITH}",
     "Parable": f"Faith +{PARABLE_FAITH}, CT -{PARABLE_CT}",
+    # Not a class skill, but resolved the same way (see STAGE_SKILL_SWAPS).
+    "Persecute": f"Faith -{PERSECUTE_FAITH}, Move -{PERSECUTE_SLOW}",
 }
 # Sling is a Physical skill (a ranged disarm - see DISARM_SKILLS), so it
 # resolves through resolve_physical_hit rather than resolve_signature.
@@ -1501,6 +1545,16 @@ def resolve_signature(skill_name, caster, target, units_list):
         caster.faith_popup = {"amount": -BOLD_VENTURE_BACKFIRE, "start": pygame.time.get_ticks()}
         enter_despair_if_faithless(caster)
         return done("miss", f"{caster.name}'s bold venture backfires - {target.name} scoffs, and {caster.name}'s faith is shaken. (-{BOLD_VENTURE_BACKFIRE})")
+    if skill_name == "Persecute":
+        slow_unit(target, PERSECUTE_SLOW, PERSECUTE_TURNS)
+        message = apply_preach(caster, target, skill_name, gain=-PERSECUTE_FAITH)
+        if target.faith <= 0 and target.team == target.original_team and target.team != caster.team:
+            arrest(target)
+            message = f"{caster.name} breaks {target.name} - they are bound and taken away!"
+        else:
+            message = f"{caster.name} persecutes {target.name}: faith {round(target.faith)}, and they're slowed for {PERSECUTE_TURNS} turns."
+        LAST_SIGNATURE_LOG = message
+        return True
     if skill_name == "Parable":
         target.ct = max(0, target.ct - PARABLE_CT)
         LAST_SIGNATURE_LOG = f"{target.name} hangs on every word of the parable. " + apply_preach(caster, target, skill_name, gain=PARABLE_FAITH)
@@ -1601,16 +1655,32 @@ def draw_dialogue_window(surface, speaker, text, frame=None):
     surface.blit(hint, (content.right - hint.get_width(), content.bottom - hint.get_height()))
 
 
-def action_menu_layout(current_menu, frame=None):
+# The action menu pops up beside the mouse: offset from the cursor, and
+# flipped to the cursor's other side when it would run off the screen.
+MENU_CURSOR_OFFSET = (18, 12)
+ACTION_MENU_STATES = ("MENU", "SUBMENU_ACT", "SUBMENU_ITEM")
+MENU_SCREEN_MARGIN = 10
+
+
+def action_menu_layout(current_menu, frame=None, anchor=None):
     """Shared by draw_action_menu and the mouse-click hit-test below it in
     main() - both need the exact same panel/content geometry, or clicks
-    stop lining up with what's actually drawn."""
+    stop lining up with what's actually drawn. `anchor` is where the mouse
+    was when the menu opened; without one the menu sits top-right."""
     width = 300
     # The box grows/shrinks with however many rows current_menu has (the
     # root menu has 4 entries; skill/item submenus vary in length) - no
     # portrait is shown here, so there's nothing else to reserve space for.
     box_height = 110 + len(current_menu) * 26
-    mx, my = SCREEN_WIDTH - width - 20, 30
+    if anchor is None:
+        mx, my = SCREEN_WIDTH - width - 20, 30
+    else:
+        ax, ay = anchor
+        dx, dy = MENU_CURSOR_OFFSET
+        mx = ax + dx if ax + dx + width <= SCREEN_WIDTH - MENU_SCREEN_MARGIN else ax - dx - width
+        my = ay + dy if ay + dy + box_height <= SCREEN_HEIGHT - MENU_SCREEN_MARGIN else ay - dy - box_height
+        mx = max(MENU_SCREEN_MARGIN, min(mx, SCREEN_WIDTH - width - MENU_SCREEN_MARGIN))
+        my = max(MENU_SCREEN_MARGIN, min(my, SCREEN_HEIGHT - box_height - MENU_SCREEN_MARGIN))
     panel_rect = pygame.Rect(mx, my, width, box_height)
     if frame:
         content = frame_content_rect(panel_rect, frame)
@@ -1619,10 +1689,10 @@ def action_menu_layout(current_menu, frame=None):
     return panel_rect, content
 
 
-def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, team_inventory=None, frame=None):
+def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, team_inventory=None, frame=None, anchor=None):
     if not active_unit:
         return
-    panel_rect, content = action_menu_layout(current_menu, frame)
+    panel_rect, content = action_menu_layout(current_menu, frame, anchor)
     if frame:
         draw_nine_slice_panel(surface, panel_rect, frame)
     else:
@@ -1742,10 +1812,12 @@ def predict_action(attacker, target, skill_name, units_list=None):
         chance, outcome = 1.0, f"Love +{LEAD_LOVE_BONUS} x{count}"
     elif skill_name in SIGNATURE_SKILLS:
         chance, outcome = 1.0, SIGNATURE_PREVIEW[skill_name]
-        faith_shift = {"Reason Together": REASON_TOGETHER_FAITH, "Parable": PARABLE_FAITH, "Disputation": DISPUTATION_FAITH,
+        faith_shift = {"Persecute": -PERSECUTE_FAITH, "Reason Together": REASON_TOGETHER_FAITH, "Parable": PARABLE_FAITH, "Disputation": DISPUTATION_FAITH,
                        "Intercession": INTERCESSION_FAITH, "Provision": PROVISION_FAITH, "Bold Venture": BOLD_VENTURE_FAITH}
         if skill_name in faith_shift:
-            faith_after = min(FAITH_CAP, target.faith + faith_shift[skill_name])
+            faith_after = max(0, min(FAITH_CAP, target.faith + faith_shift[skill_name]))
+            if skill_name == "Persecute" and faith_after <= 0:
+                outcome = "ARREST!"
         if skill_name in ("Disputation", "Peacemaker", "Arrest"):
             chance = 1 - status_resist_chance(target)
         elif skill_name == "Good News":
@@ -2564,6 +2636,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
                 unit.exp = progress.get("exp", unit.exp)
         for unit in spawned:
             apply_level_bonuses(unit)
+        apply_stage_skill_swaps(stage["node_id"] if stage else FIRST_STAGE_NODE, spawned)
         return spawned
 
     # The player's own character (from the new-game survey) joins the party.
@@ -2631,6 +2704,9 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
     # it has played out, the stage's ending (see STAGE_SCENES).
     scene_state = None
     ending = None
+    # Where the mouse was when the action menu last opened (see the loop).
+    menu_anchor = None
+    menu_was_open = False
     dialogue_index = 0
     dialogue_active = bool(dialogue_lines)
     # dialogues.csv can script mid-battle beats under later turn numbers (e.g.
@@ -2796,6 +2872,13 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
                 game_state = "GAME_OVER"
                 combat_log = "The road to Damascus ends in light."
 
+        # The action menu opens beside the mouse and stays put while it (or
+        # its Act/Item submenu) is open, so its buttons can be reached.
+        menu_open = game_state in ACTION_MENU_STATES and active_unit is not None
+        if menu_open and not menu_was_open:
+            menu_anchor = pygame.mouse.get_pos()
+        menu_was_open = menu_open
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -2916,7 +2999,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
                     if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"]:
                         item_height = 26
                         mx, my = event.pos
-                        menu_panel_rect, menu_content = action_menu_layout(current_menu, ui_frame)
+                        menu_panel_rect, menu_content = action_menu_layout(current_menu, ui_frame, menu_anchor)
                         if menu_panel_rect.collidepoint(event.pos):
                             relative_y = my - (menu_content.y + 35)
                             if 0 <= relative_y < len(current_menu) * item_height:
@@ -3475,7 +3558,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
         draw_skill_banner(screen, font, SCREEN_WIDTH // 2, 92)
 
         if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"] and active_unit:
-            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, team_inventory, ui_frame)
+            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, team_inventory, ui_frame, menu_anchor)
 
         if game_state == "GAME_OVER":
             is_victory = winner == "Player" or ending is not None

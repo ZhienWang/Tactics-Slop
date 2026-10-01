@@ -87,3 +87,7 @@ Bold Venture,divine_conversion,target,convert
 Bold Venture,bad_omen_eye,caster,miss
 Parable,wisdom_glow,target,hit
 Parable,divine_conversion,target,convert
+Persecute,doubt_miasma,target,hit
+Persecute,slow_chains,target,hit
+@arrested,snare_bind,target,always
+@arrested,silence_seal,target,always
