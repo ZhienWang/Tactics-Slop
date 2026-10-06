@@ -1,9 +1,5 @@
 """Module entrypoint: the title screen (New Game runs the class survey),
-then the first stage's battle.
-
-The world map is hidden for now - scripts/world_map.py is untouched and
-still runnable on its own; swapping run_first_stage back for world_map's
-main here (and in main.py) is all it takes to put it back in front.
+then the world map, where each story is told and its battle fought.
 """
 import sys
 import asyncio

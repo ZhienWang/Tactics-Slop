@@ -2,7 +2,8 @@
 decides the hero's class (see scripts/hero.py) - Paul, the hero's advisor,
 introduces it, the player picks the super short (4), short (12) or long (30)
 version - or skips it and picks a class outright - the questions follow, the player names their character,
-and the result screen shows the class, its skills and Paul's counsel.
+and the result screen shows the class, its skills and Paul's counsel. Then the world map (scripts/world_map.py),
+where each story is told (scripts/story.py) and fought.
 
 Every screen is its own small async loop (awaiting asyncio.sleep(0) each
 frame, like the battle) so the browser build keeps running.
@@ -14,12 +15,13 @@ import pygame
 
 from scripts.assets import draw_nine_slice_panel, get_font, load_image_safe, load_nine_slice_frame
 from scripts.config import SCREEN_HEIGHT, SCREEN_WIDTH
-from scripts.game_logic import SIGNATURE_PREVIEW, run_first_stage
+from scripts.game_logic import SIGNATURE_PREVIEW
 from scripts.hero import (
     DEFAULT_HERO_NAME, HERO_TOKEN, MAX_NAME_LENGTH, ROLE_COLORS, load_classes_from_csv, load_profile,
     load_survey_from_csv, save_profile, score_survey,
 )
 from scripts.skybox import Skybox
+from scripts.world_map import main as run_world_map
 
 TEXT = (240, 232, 214)
 DIM = (190, 180, 160)
@@ -131,7 +133,7 @@ async def title_screen(screen):
         screen.backdrop()
         title = title_font.render("The Road to Jerusalem", True, GOLD)
         screen.surface.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 250)))
-        sub = sub_font.render("A tactics pilgrimage through the Acts of the Apostles", True, TEXT)
+        sub = sub_font.render("A tactics pilgrimage through the New Testament", True, TEXT)
         screen.surface.blit(sub, sub.get_rect(center=(SCREEN_WIDTH // 2, 330)))
         for i, ((_, label), rect) in enumerate(zip(options, rects)):
             screen.button(rect, label, i == index, button_font)
@@ -467,7 +469,7 @@ async def new_game(screen):
 
 
 async def start_game():
-    """Title screen, then (for a new game) the survey, then the first battle."""
+    """Title screen, then (for a new game) the survey, then the world map."""
     pygame.init()
     surface = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("The Road to Jerusalem")
@@ -476,4 +478,4 @@ async def start_game():
     profile = load_profile() if choice == "continue" else None
     if profile is None:
         profile = await new_game(screen)
-    return await run_first_stage(hero=profile)
+    return await run_world_map(hero=profile)

@@ -1,10 +1,13 @@
 node_id,name,x,y,type,connections,start
-damascus,Road to Damascus,330,300,stage,jerusalem,1
-jerusalem,Jerusalem,152,480,stage,damascus|caesarea,0
+galilee,Sea of Galilee,300,410,story,damascus|gethsemane,1
+gethsemane,Gethsemane,420,520,story,galilee|jerusalem,0
+damascus,Road to Damascus,330,300,stage,jerusalem|galilee,0
+jerusalem,Jerusalem,152,480,stage,damascus|caesarea|gethsemane,0
 caesarea,Caesarea,300,680,town,jerusalem|antioch,0
 antioch,Antioch,609,500,stage,caesarea|philippi|corinth,0
 philippi,Philippi,727,328,stage,antioch|troas,0
 corinth,Corinth,657,685,stage,antioch|troas,0
 troas,Troas,869,558,town,philippi|corinth|ephesus,0
-ephesus,Ephesus,1266,563,stage,troas|rome,0
+ephesus,Ephesus,1266,563,stage,troas|rome|patmos,0
 rome,Rome,1236,348,stage,ephesus,0
+patmos,Patmos,1440,670,story,ephesus,0

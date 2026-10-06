@@ -24,6 +24,13 @@ SKY_PROFILES = {
                    "far": (78, 86, 98), "near": (54, 60, 68), "clouds": 22, "cloud": (120, 126, 138, 205), "sun": False},
     "storm": {"top": (16, 20, 32), "horizon": (64, 68, 84), "ground": (18, 20, 26),
               "far": (50, 54, 70), "near": (34, 38, 48), "clouds": 26, "cloud": (70, 74, 92, 215), "sun": False},
+    # Times of day for the story scenes (see story.py).
+    "dawn": {"top": (72, 84, 142), "horizon": (246, 190, 146), "ground": (62, 54, 60),
+             "far": (146, 124, 142), "near": (98, 86, 98), "clouds": 7, "cloud": (255, 222, 212, 150), "sun": True},
+    "dusk": {"top": (38, 38, 88), "horizon": (234, 142, 92), "ground": (46, 36, 42),
+             "far": (112, 82, 98), "near": (74, 56, 68), "clouds": 8, "cloud": (240, 170, 150, 160), "sun": True},
+    "night": {"top": (8, 10, 28), "horizon": (40, 46, 78), "ground": (12, 14, 22),
+              "far": (30, 34, 56), "near": (20, 24, 40), "clouds": 6, "cloud": (60, 66, 96, 150), "sun": False},
 }
 DEFAULT_SKY = "sunny"
 

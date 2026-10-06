@@ -2532,7 +2532,11 @@ def draw_prop(surface, sx, sy, prop, zoom=1.0, light=1.0):
     surface.blit(sprite, (round(base_x - sprite_width / 2), round(base_y - sprite_height)))
 
 
-async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None):
+async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None, from_map=False):
+    """One battle. `from_map` (entered from the world map) puts a World Map
+    button on the end screen in place of the demo's thanks, and closing the
+    window quits the game rather than dropping back to the map. Returns
+    {"victory": bool, "units": each unit's book/level progress}."""
     global MAP_DATA, MAP_ROWS, MAP_COLS, SKILL_REGISTRY, ITEM_REGISTRY, EQUIPMENT_REGISTRY, BOOK_REGISTRY, CHARACTER_ROSTER, TERRAIN_LAYOUT, MAP_PROPS, PROP_TILES, ESCAPE_TILES
 
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -2705,6 +2709,10 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
     game_over_panel_rect = pygame.Rect(SCREEN_WIDTH // 2 - 450, SCREEN_HEIGHT // 2 - 250, 900, 500)
     game_over_content = frame_content_rect(game_over_panel_rect, ui_frame) if ui_frame else game_over_panel_rect.inflate(-32, -32)
     restart_button = pygame.Rect(game_over_content.centerx - 60, game_over_content.bottom - 60, 120, 40)
+    map_button = None
+    if from_map:
+        restart_button.x = game_over_content.centerx - 150
+        map_button = pygame.Rect(game_over_content.centerx + 10, game_over_content.bottom - 60, 160, 40)
     stats_scroll = 0
     stats_panel_rect = pygame.Rect(10, 10, 280, 180)
     show_hud = True
@@ -2892,6 +2900,9 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                if from_map:
+                    pygame.quit()
+                    sys.exit()
                 running = False
 
             elif dialogue_active:
@@ -2903,7 +2914,11 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
                 continue
 
             elif game_state == "GAME_OVER":
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if map_button and (
+                        (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and map_button.collidepoint(event.pos))
+                        or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE)):
+                    running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if restart_button.collidepoint(event.pos):
                         # Restart game
                         units = spawn_units()
@@ -3641,7 +3656,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
             screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 160)))
             log_surf = font.render(combat_log, True, (190, 190, 190))
             screen.blit(log_surf, log_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 195)))
-            if is_victory:
+            if is_victory and not from_map:
                 thanks = get_font(40, bold=True).render(DEMO_THANKS, True, theme_color)
                 screen.blit(thanks, thanks.get_rect(center=(game_over_content.centerx, game_over_content.y + 270)))
                 detail = font.render(DEMO_THANKS_DETAIL, True, (230, 230, 230))
@@ -3652,6 +3667,11 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
             restart_label_color = (20, 20, 20) if is_victory else (255, 255, 255)
             restart_text = font.render("RESTART", True, restart_label_color)
             screen.blit(restart_text, restart_text.get_rect(center=restart_button.center))
+            if map_button:
+                pygame.draw.rect(screen, (40, 40, 52), map_button)
+                pygame.draw.rect(screen, (255, 255, 255), map_button, 2)
+                map_text = font.render("WORLD MAP", True, (255, 255, 255))
+                screen.blit(map_text, map_text.get_rect(center=map_button.center))
 
         dialogue_voice.update(tuple(dialogue_lines[dialogue_index]) if dialogue_active else None)
         if dialogue_active:
@@ -3669,7 +3689,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
     # one piece of battle state that should survive back onto the world
     # map's persistent roster - equipment doesn't need this since it never
     # changes mid-battle.
-    return {
+    victory = game_state == "GAME_OVER" and (get_winner(units) == "Player" or ending is not None)
+    return {"victory": victory, "units": {
         unit.name: {
             "books": dict(unit.books),
             "turns": dict(unit.book_turns),
@@ -3678,7 +3699,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None)
             "exp": unit.exp,
         }
         for unit in units
-    }
+    }}
 
 
 # The opening battle: Saul riding to Damascus to arrest the disciples
@@ -3687,10 +3708,9 @@ FIRST_STAGE_NODE = "damascus"
 
 
 async def run_first_stage(hero=None):
-    """Boots straight into the first stage's battle, skipping the world
-    map. The world map (scripts/world_map.py) still works and is still
-    reachable by running that module - the game's entrypoints just don't
-    route through it while it's hidden."""
+    """Boots straight into the first stage's battle, skipping the world map
+    (the game's entrypoints go through the world map - see scripts/intro.py;
+    this is for running a battle on its own)."""
     return await main(load_stage_manifest().get(FIRST_STAGE_NODE), hero=hero)
 
 

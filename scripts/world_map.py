@@ -18,7 +18,9 @@ from scripts.data_editor import (
     BOOK_SLOTS,
 )
 from scripts.assets import build_character_face_portraits, load_image_safe, bring_window_to_front, load_nine_slice_frame, draw_nine_slice_panel, frame_content_rect, get_font
-from scripts.game_logic import Unit, main as run_battle
+from scripts.game_logic import FIRST_STAGE_NODE, Unit, main as run_battle
+from scripts.hero import HERO_TOKEN, load_classes_from_csv, save_profile
+from scripts.story import load_chapters, load_story, play_scene, scene_ids
 
 # --- WORLD MAP DATA ---
 # Node layout (screen position, type, which nodes connect to which) lives in
@@ -51,6 +53,7 @@ STATE_UNIT_LIST = "UNIT_LIST"
 STATE_UNIT_DETAIL = "UNIT_DETAIL"
 STATE_EQUIPMENT = "EQUIPMENT"
 STATE_BOOKS = "BOOKS"
+STATE_STORY = "STORY"
 
 BOOK_SLOT_LABELS = {slot: f"Book {idx + 1}" for idx, slot in enumerate(BOOK_SLOTS)}
 
@@ -69,13 +72,17 @@ SLOT_LABELS = {
 EMPTY_SLOT_LABEL = "-- Empty --"
 
 TRAVEL_STEP = 0.045
-MENU_OPTIONS = ["Unit", "Close"]
+MENU_OPTIONS = ["Unit", "Story", "Close"]
 
 PANEL_BG = (18, 18, 30)
 PANEL_BORDER = CURSOR_COLOR
 TEXT_MAIN = (235, 235, 235)
 TEXT_DIM = (150, 150, 160)
 TEAM_COLOR = (110, 190, 255)
+# Battle stages red, story nodes (a visual-novel scene, no battle yet - see
+# story.py) gold, waypoints blue.
+NODE_COLORS = {"stage": (200, 90, 90), "story": (214, 170, 70)}
+WAYPOINT_COLOR = (90, 140, 200)
 
 
 def node_at_pos(pos):
@@ -121,7 +128,7 @@ def draw_path_and_nodes(surface, font, current_node, visited):
         x, y = node["pos"]
         is_current = node_id == current_node
         is_visited = node_id in visited
-        base_color = (200, 90, 90) if node["type"] == "stage" else (90, 140, 200)
+        base_color = NODE_COLORS.get(node["type"], WAYPOINT_COLOR)
         if not is_visited:
             base_color = tuple(c // 2 for c in base_color)
 
@@ -218,6 +225,35 @@ def draw_command_menu(surface, font, options, index, title, frame=None):
         color = PANEL_BORDER if idx == index else TEXT_MAIN
         pointer = " -> " if idx == index else "    "
         surface.blit(font.render(f"{pointer}{opt}", True, color), (rect.x, rect.y))
+
+
+def story_list_layout(chapters, frame=None):
+    width, height = 900, 250 + len(chapters) * 60
+    mx, my = SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT // 2 - height // 2
+    panel_rect = pygame.Rect(mx, my, width, height)
+    content = frame_content_rect(panel_rect, frame) if frame else pygame.Rect(mx + 14, my + 40, width - 28, height - 54)
+    row_rects = [pygame.Rect(content.x - 6, content.y + 40 + idx * 60, content.width + 12, 52) for idx in range(len(chapters))]
+    return panel_rect, row_rects
+
+
+def draw_story_list(surface, font, chapters, heard, index, frame=None):
+    """The stories in order, to replay the ones already heard (`heard` holds
+    the node ids of those)."""
+    panel_rect, row_rects = story_list_layout(chapters, frame)
+    draw_panel_bg(surface, panel_rect, frame)
+    content = frame_content_rect(panel_rect, frame) if frame else pygame.Rect(panel_rect.x + 14, panel_rect.y + 40, panel_rect.width - 28, panel_rect.height - 54)
+    surface.blit(font.render("STORY - replay a story you have heard", True, PANEL_BORDER), (content.x, content.y))
+    for idx, (chapter, rect) in enumerate(zip(chapters, row_rects)):
+        selected = idx == index
+        if selected:
+            pygame.draw.rect(surface, (60, 50, 30), rect)
+            pygame.draw.rect(surface, PANEL_BORDER, rect, 1)
+        unlocked = chapter["node_id"] in heard
+        title = f"{chapter['chapter']}. {chapter['title']}" if unlocked else f"{chapter['chapter']}. ???"
+        surface.blit(font.render(title, True, (PANEL_BORDER if selected else TEXT_MAIN) if unlocked else TEXT_DIM), (rect.x + 12, rect.y + 4))
+        detail = chapter["passage"] if unlocked else f"Not yet heard - travel to {NODES.get(chapter['node_id'], {}).get('name', '?')}"
+        surface.blit(font.render(detail, True, TEXT_DIM), (rect.x + 12, rect.y + 27))
+    surface.blit(font.render("[Enter / Click] Replay   [Esc] Back", True, TEXT_DIM), (content.x, content.bottom - 24))
 
 
 def unit_list_layout(units, frame=None):
@@ -529,7 +565,10 @@ def draw_books_screen(surface, font, unit, portraits, slot_index, books_registry
     surface.blit(font.render("[Left/Right] Change book   [Up/Down] Select slot   [Esc] Back", True, TEXT_DIM), (cx + 16, cy + height - 26))
 
 
-async def main():
+async def main(hero=None):
+    """The world map. `hero` is the player's saved profile (see hero.py): the
+    hero travels the map and joins every battle, and the stories heard and
+    the places visited are saved back into it."""
     data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     required_files = ["map_layout.csv", "skills.csv", "items.csv", "equipment.csv", "characters.csv", "terrain_layout.csv", "game_settings.csv", "dialogues.csv"]
     if not all(os.path.exists(os.path.join(data_dir, filename)) for filename in required_files):
@@ -537,11 +576,10 @@ async def main():
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Tactics Engine: World Map")
+    pygame.display.set_caption("The Road to Jerusalem")
     bring_window_to_front()
     clock = pygame.time.Clock()
     font = get_font(22)
-    title_font = get_font(34)
 
     map_background = load_image_safe("assets/world_map.jpg")
     if map_background:
@@ -551,13 +589,17 @@ async def main():
 
     stage_manifest = load_stage_manifest()
 
-    roster_source = stage_manifest.get(START_NODE, {}).get("characters")
+    roster_source = (stage_manifest.get(START_NODE) or stage_manifest.get(FIRST_STAGE_NODE, {})).get("characters")
     roster = load_characters_from_csv(roster_source)
     units = [Unit(char_data) for char_data in roster if char_data["team"] == "Player"]
     portraits = build_character_face_portraits(units, [])
     leader = units[0] if units else None
     leader_icon = None
-    if leader and portraits.get(leader.name):
+    classes = load_classes_from_csv()
+    if hero and hero.get("type") in classes:
+        leader_icon = load_image_safe(HERO_TOKEN.format(role=classes[hero["type"]]["role"].lower()))
+        leader_icon = pygame.transform.smoothscale(leader_icon, (84, 42)) if leader_icon else None
+    elif leader and portraits.get(leader.name):
         leader_icon = pygame.transform.smoothscale(portraits[leader.name], (84, 42))
 
     equipment_registry = load_equipment_from_csv()
@@ -566,9 +608,16 @@ async def main():
     books_registry = load_books_from_csv()
     book_pool = sorted(books_registry.keys())
 
+    story = load_story()
+    chapters = load_chapters()
+    chapter_by_node = {c["node_id"]: c for c in chapters}
+    profile = hero or {}
+    hero_name = profile.get("name")
+    heard = set(profile.get("heard", []))  # ids of the scenes played through
+
     state = STATE_MAP
-    current_node = START_NODE
-    visited = {START_NODE}
+    current_node = profile.get("node") if profile.get("node") in NODES else START_NODE
+    visited = {n for n in profile.get("visited", []) if n in NODES} | {current_node}
     transition_from = None
     transition_to = None
     transition_progress = 0.0
@@ -578,6 +627,7 @@ async def main():
     selected_unit = None
     equip_slot_index = 0
     book_slot_index = 0
+    story_index = 0
     mouse_pos = (0, 0)
 
     menu_button = pygame.Rect(SCREEN_WIDTH - 130, 20, 110, 34)
@@ -589,7 +639,9 @@ async def main():
                      "level": u.level, "exp": u.exp}
             for u in units
         }
-        progress = await run_battle(stage=stage_manifest.get(node_id), equipment_loadout=equipment_loadout, book_loadout=book_loadout)
+        result = await run_battle(stage=stage_manifest.get(node_id), equipment_loadout=equipment_loadout,
+                                  book_loadout=book_loadout, hero=hero, from_map=True)
+        progress = result["units"]
         if progress:
             for u in units:
                 p = progress.get(u.name)
@@ -600,7 +652,42 @@ async def main():
                     u.level = p.get("level", u.level)
                     u.exp = p.get("exp", u.exp)
         pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Tactics Engine: World Map")
+        pygame.display.set_caption("The Road to Jerusalem")
+        return result["victory"]
+
+    def save_progress():
+        if hero:
+            profile.update(heard=sorted(heard), node=current_node, visited=sorted(visited))
+            save_profile(profile)
+
+    async def play(scene_id):
+        if await play_scene(screen, scene_id, hero_name=hero_name, story=story):
+            heard.add(scene_id)
+            save_progress()
+
+    async def enter_node(node_id):
+        """A node's story: its intro scene, its battle (if it has one) and,
+        after a victory, its outro. A stage's intro only plays the first
+        time - the Story menu replays it."""
+        intro, outro = scene_ids(node_id)
+        is_stage = NODES[node_id]["type"] == "stage" and node_id in stage_manifest
+        if not is_stage or intro not in heard:
+            await play(intro)
+        if not is_stage or await enter_battle(node_id):
+            await play(outro)
+
+    def chapter_heard(node_id):
+        return any(scene in heard for scene in scene_ids(node_id))
+
+    async def replay_chapter(chapter):
+        for scene in scene_ids(chapter["node_id"]):
+            if scene in heard:
+                await play(scene)
+
+    def open_story_list():
+        nonlocal state, story_index
+        state = STATE_STORY
+        story_index = next((i for i, c in enumerate(chapters) if c["node_id"] == current_node), 0)
 
     running = True
     while running:
@@ -621,8 +708,8 @@ async def main():
                 elif state == STATE_MAP:
                     clicked_node = node_at_pos(event.pos)
                     if clicked_node == current_node:
-                        if NODES[current_node]["type"] == "stage":
-                            await enter_battle(current_node)
+                        if NODES[current_node]["type"] in NODE_COLORS:
+                            await enter_node(current_node)
                     elif clicked_node is not None and clicked_node in NODES[current_node]["connections"]:
                         transition_from = current_node
                         transition_to = clicked_node
@@ -638,10 +725,21 @@ async def main():
                         if choice == "Unit":
                             state = STATE_UNIT_LIST
                             unit_index = 0
+                        elif choice == "Story":
+                            open_story_list()
                         elif choice == "Close":
                             state = STATE_MAP
                     elif not panel_rect.collidepoint(event.pos):
                         state = STATE_MAP
+
+                elif state == STATE_STORY:
+                    panel_rect, row_rects = story_list_layout(chapters, ui_frame)
+                    clicked = next((idx for idx, rect in enumerate(row_rects) if rect.collidepoint(event.pos)), None)
+                    if clicked is not None:
+                        story_index = clicked
+                        await replay_chapter(chapters[clicked])
+                    elif not panel_rect.collidepoint(event.pos):
+                        state = STATE_MENU
 
                 elif state == STATE_UNIT_LIST:
                     panel_rect, row_rects = unit_list_layout(units, ui_frame)
@@ -714,8 +812,8 @@ async def main():
                             transition_progress = 0.0
                             state = STATE_TRANSITION
                     elif event.key == pygame.K_RETURN:
-                        if NODES[current_node]["type"] == "stage":
-                            await enter_battle(current_node)
+                        if NODES[current_node]["type"] in NODE_COLORS:
+                            await enter_node(current_node)
 
                 elif state == STATE_MENU:
                     if event.key == pygame.K_UP:
@@ -729,8 +827,20 @@ async def main():
                         if choice == "Unit":
                             state = STATE_UNIT_LIST
                             unit_index = 0
+                        elif choice == "Story":
+                            open_story_list()
                         elif choice == "Close":
                             state = STATE_MAP
+
+                elif state == STATE_STORY:
+                    if event.key == pygame.K_UP:
+                        story_index = (story_index - 1) % max(1, len(chapters))
+                    elif event.key == pygame.K_DOWN:
+                        story_index = (story_index + 1) % max(1, len(chapters))
+                    elif event.key == pygame.K_ESCAPE:
+                        state = STATE_MENU
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE) and chapters:
+                        await replay_chapter(chapters[story_index])
 
                 elif state == STATE_UNIT_LIST:
                     if event.key == pygame.K_UP:
@@ -783,6 +893,7 @@ async def main():
             if transition_progress >= 1.0:
                 current_node = transition_to
                 visited.add(current_node)
+                save_progress()
                 transition_from = None
                 transition_to = None
                 state = STATE_MAP
@@ -792,9 +903,6 @@ async def main():
             screen.blit(map_background, (0, 0))
         else:
             screen.fill((30, 34, 40))
-        title = title_font.render("The Road to Rome", True, PANEL_BORDER)
-        screen.blit(title, (30, 24))
-
         draw_path_and_nodes(screen, font, current_node, visited)
 
         if state == STATE_TRANSITION:
@@ -811,12 +919,17 @@ async def main():
 
         if state == STATE_MAP:
             node = NODES[current_node]
-            if node["type"] == "stage":
+            chapter = chapter_by_node.get(current_node)
+            if chapter:
+                draw_hint_bar(screen, font, f"Click/Arrows: Travel   |   Click node again (or Enter) to begin Story {chapter['chapter']}: {chapter['title']}   |   [Esc] Menu")
+            elif node["type"] == "stage":
                 draw_hint_bar(screen, font, f"Click/Arrows: Travel   |   Click node again (or Enter) to begin battle at {node['name']}   |   [Esc] Menu")
             else:
                 draw_hint_bar(screen, font, f"Click/Arrows: Travel   |   {node['name']} (Waypoint)   |   [Esc] Menu")
         elif state == STATE_MENU:
             draw_command_menu(screen, font, MENU_OPTIONS, menu_index, "MENU", ui_frame)
+        elif state == STATE_STORY:
+            draw_story_list(screen, font, chapters, {c["node_id"] for c in chapters if chapter_heard(c["node_id"])}, story_index, ui_frame)
         elif state == STATE_UNIT_LIST:
             draw_unit_list(screen, font, units, portraits, unit_index, ui_frame)
         elif state == STATE_UNIT_DETAIL and selected_unit:

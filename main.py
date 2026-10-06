@@ -1,11 +1,10 @@
 """Web entrypoint (pygbag): the title screen (New Game runs the class survey),
-then the first stage's battle.
+then the world map, where each story is told and its battle fought.
 
 pygbag's generated loader hardcodes the entry file to `assets/main.py`
 inside the packaged bundle, so this file must exist at the project root
 under this exact name for the web build to actually start. Mirrors
-fftr.py, the desktop entrypoint - including the world map being hidden
-for now (see fftr.py).
+fftr.py, the desktop entrypoint.
 
 Build the web version with tools/build_web.py.
 """
