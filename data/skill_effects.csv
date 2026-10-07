@@ -10,9 +10,9 @@ Preach,faith_down,target,shaken
 Preach,bad_omen_eye,caster,shaken
 Preach,despair_storm,target,despair
 Preach,fear_shadows,target,despair
-Heal,holy_heal,target,hit
-Heal,blessing_rain,target,hit
-Heal,zeal_spark,caster,hit
+Heal Blind,holy_heal,target,hit
+Heal Blind,blessing_rain,target,hit
+Heal Blind,zeal_spark,caster,hit
 First Aid,first_aid,target,hit
 First Aid,mending_stitches,target,hit
 Lead,lead_rally,caster,hit
@@ -91,3 +91,6 @@ Persecute,doubt_miasma,target,hit
 Persecute,slow_chains,target,hit
 @arrested,snare_bind,target,always
 @arrested,silence_seal,target,always
+Blind,blind_veil,target,hit
+Blind,fizzle,target,miss
+@blind,blind_veil,target,always

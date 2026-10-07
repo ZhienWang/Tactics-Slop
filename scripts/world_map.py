@@ -6,6 +6,10 @@ import pygame
 
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, CURSOR_COLOR, FAITH_CAP
 from scripts.data_editor import (
+    WORLD_MAP_CELL,
+    world_grid_to_screen,
+    load_world_map_rooms,
+    load_items_from_csv,
     generate_dummy_csv_files,
     load_characters_from_csv,
     load_stage_manifest,
@@ -18,33 +22,34 @@ from scripts.data_editor import (
     BOOK_SLOTS,
 )
 from scripts.assets import build_character_face_portraits, load_image_safe, bring_window_to_front, load_nine_slice_frame, draw_nine_slice_panel, frame_content_rect, get_font
-from scripts.game_logic import FIRST_STAGE_NODE, Unit, main as run_battle
+from scripts.game_logic import FIRST_STAGE_NODE, Unit, apply_book_growth, draw_stamina_dots, gain_exp, main as run_battle
+from scripts import icons
 from scripts.hero import HERO_TOKEN, load_classes_from_csv, save_profile
 from scripts.story import load_chapters, load_story, play_scene, scene_ids
 
 # --- WORLD MAP DATA ---
-# Node layout (screen position, type, which nodes connect to which) lives in
-# data/world_map_nodes.csv so it can be tuned without touching code. Falls
-# back to this hardcoded route (a small, mostly-linear path in the spirit of
-# the Super Mario World overworld) if that file is ever missing/malformed.
+# A grid of square spaces in the style of Super Mario Bros. 3's world maps:
+# story and battle squares along straight roads, with library and party
+# rooms off to the side (like Toad Houses). The layout lives in
+# data/world_map_nodes.csv (col, row, type, connections) and the rooms'
+# rewards in data/world_map_rooms.csv; this short route is the fallback if
+# the file is missing or malformed.
 _FALLBACK_NODES = {
-    "damascus":  {"pos": (330, 300),  "name": "Road to Damascus", "type": "stage", "connections": ["jerusalem"]},
-    "jerusalem": {"pos": (352, 320),  "name": "Jerusalem",  "type": "stage", "connections": ["damascus", "caesarea"]},
-    "caesarea":  {"pos": (273, 570),  "name": "Caesarea",   "type": "town",  "connections": ["jerusalem", "antioch"]},
-    "antioch":   {"pos": (609, 500),  "name": "Antioch",    "type": "stage", "connections": ["caesarea", "philippi", "corinth"]},
-    "philippi":  {"pos": (727, 258),  "name": "Philippi",   "type": "stage", "connections": ["antioch", "troas"]},
-    "corinth":   {"pos": (727, 695),  "name": "Corinth",    "type": "stage", "connections": ["antioch", "troas"]},
-    "troas":     {"pos": (969, 438),  "name": "Troas",      "type": "town",  "connections": ["philippi", "corinth", "ephesus"]},
-    "ephesus":   {"pos": (1266, 563), "name": "Ephesus",    "type": "stage", "connections": ["troas", "rome"]},
-    "rome":      {"pos": (1406, 258), "name": "Rome",       "type": "stage", "connections": ["ephesus"]},
+    "damascus":  {"grid": (1, 1), "name": "Road to Damascus", "type": "stage", "connections": ["jerusalem"]},
+    "jerusalem": {"grid": (4, 1), "name": "Jerusalem", "type": "stage", "connections": ["damascus", "caesarea"]},
+    "caesarea":  {"grid": (4, 3), "name": "Caesarea", "type": "town", "connections": ["jerusalem", "antioch"]},
+    "antioch":   {"grid": (7, 3), "name": "Antioch", "type": "stage", "connections": ["caesarea"]},
 }
+for _node in _FALLBACK_NODES.values():
+    _node["pos"] = world_grid_to_screen(*_node["grid"], 9, 5)
 try:
     NODES, START_NODE = load_world_map_nodes()
     if not NODES:
         raise ValueError("world_map_nodes.csv produced no nodes")
 except (OSError, ValueError, KeyError):
     NODES, START_NODE = _FALLBACK_NODES, "damascus"
-NODE_CLICK_RADIUS = 26
+# Half the width of a square space, for clicks.
+NODE_HALF = WORLD_MAP_CELL * 0.42
 
 STATE_MAP = "MAP"
 STATE_TRANSITION = "TRANSITION"
@@ -54,6 +59,7 @@ STATE_UNIT_DETAIL = "UNIT_DETAIL"
 STATE_EQUIPMENT = "EQUIPMENT"
 STATE_BOOKS = "BOOKS"
 STATE_STORY = "STORY"
+STATE_ROOM = "ROOM"
 
 BOOK_SLOT_LABELS = {slot: f"Book {idx + 1}" for idx, slot in enumerate(BOOK_SLOTS)}
 
@@ -80,16 +86,24 @@ TEXT_MAIN = (235, 235, 235)
 TEXT_DIM = (150, 150, 160)
 TEAM_COLOR = (110, 190, 255)
 # Battle stages red, story nodes (a visual-novel scene, no battle yet - see
-# story.py) gold, waypoints blue.
-NODE_COLORS = {"stage": (200, 90, 90), "story": (214, 170, 70)}
+# story.py) gold; both are entered with Enter / a second click. Towns are
+# path junctions; library and party rooms are houses with a one-time reward.
+NODE_COLORS = {"stage": (206, 78, 52), "story": (222, 170, 48)}
 WAYPOINT_COLOR = (90, 140, 200)
+ROOM_TYPES = {"library", "party"}
+ROOM_ROOF = {"library": (60, 104, 186), "party": (196, 58, 58)}
+ROOM_GLYPH = {"library": "Preach", "party": "Breaking Bread"}
+GRASS = ((112, 168, 72), (104, 158, 66))
+ROAD = (232, 204, 140)
+ROAD_EDGE = (150, 116, 64)
+INK = (40, 28, 20)
 
 
 def node_at_pos(pos):
     px, py = pos
     for node_id, node in NODES.items():
         nx, ny = node["pos"]
-        if math.hypot(px - nx, py - ny) <= NODE_CLICK_RADIUS:
+        if abs(px - nx) <= NODE_HALF and abs(py - ny) <= NODE_HALF:
             return node_id
     return None
 
@@ -111,34 +125,120 @@ def pick_neighbor_by_direction(current_id, dx, dy):
     return best_id
 
 
-def draw_path_and_nodes(surface, font, current_node, visited):
+def draw_world_background(surface):
+    """A checkered grass field, Mario-map style - no background picture."""
+    cell = WORLD_MAP_CELL // 2
+    for y in range(0, SCREEN_HEIGHT, cell):
+        for x in range(0, SCREEN_WIDTH, cell):
+            pygame.draw.rect(surface, GRASS[((x // cell) + (y // cell)) % 2], (x, y, cell, cell))
+
+
+def draw_road(surface, a, b):
+    """A sandy road between two square centres, dotted at every square it
+    crosses, like the paths on a Mario world map."""
+    (ax, ay), (bx, by) = a, b
+    width = round(WORLD_MAP_CELL * 0.34)
+    rect = pygame.Rect(min(ax, bx) - width // 2, min(ay, by) - width // 2, abs(bx - ax) + width, abs(by - ay) + width)
+    pygame.draw.rect(surface, ROAD_EDGE, rect.inflate(6, 6), border_radius=width // 2)
+    pygame.draw.rect(surface, ROAD, rect, border_radius=width // 2)
+    steps = max(1, round(max(abs(bx - ax), abs(by - ay)) / WORLD_MAP_CELL))
+    for i in range(1, steps):
+        dot = (ax + (bx - ax) * i / steps, ay + (by - ay) * i / steps)
+        pygame.draw.circle(surface, ROAD_EDGE, dot, 5)
+
+
+def draw_square(surface, font, pos, color, label, current, cleared):
+    half = round(NODE_HALF)
+    rect = pygame.Rect(0, 0, half * 2, half * 2)
+    rect.center = pos
+    pygame.draw.rect(surface, INK, rect.move(0, 5), border_radius=10)        # drop shadow
+    pygame.draw.rect(surface, color, rect, border_radius=10)
+    pygame.draw.rect(surface, tuple(min(255, c + 60) for c in color), rect.inflate(-10, -10), 3, border_radius=8)
+    pygame.draw.rect(surface, CURSOR_COLOR if current else INK, rect, 4 if current else 3, border_radius=10)
+    text = get_font(34, bold=True).render(label, True, (255, 250, 236))
+    surface.blit(get_font(34, bold=True).render(label, True, INK), text.get_rect(center=(pos[0] + 2, pos[1] + 2)))
+    surface.blit(text, text.get_rect(center=pos))
+    if cleared:
+        tick = [(rect.right - 26, rect.top + 12), (rect.right - 18, rect.top + 20), (rect.right - 6, rect.top + 4)]
+        pygame.draw.lines(surface, (255, 255, 255), False, tick, 5)
+
+
+def draw_house(surface, pos, kind, current, used):
+    half = round(NODE_HALF)
+    x, y = pos
+    roof_color = (120, 120, 120) if used else ROOM_ROOF[kind]
+    wall = pygame.Rect(x - half + 8, y - half * 0.15, half * 2 - 16, half * 1.1)
+    pygame.draw.rect(surface, INK, wall.move(0, 5))
+    pygame.draw.rect(surface, (238, 226, 200) if not used else (170, 166, 158), wall)
+    pygame.draw.rect(surface, INK, wall, 3)
+    roof = [(x - half - 2, wall.top + 2), (x, y - half - 6), (x + half + 2, wall.top + 2)]
+    pygame.draw.polygon(surface, roof_color, roof)
+    pygame.draw.polygon(surface, CURSOR_COLOR if current else INK, roof, 4 if current else 3)
+    glyph = icons.icon(ROOM_GLYPH[kind], round(half * 0.95), roof_color, disabled=used)
+    surface.blit(glyph, glyph.get_rect(center=(x, wall.centery + 2)))
+
+
+def draw_path_and_nodes(surface, font, current_node, visited, chapter_by_node=None, cleared=(), rooms_used=()):
     drawn_edges = set()
     for node_id, node in NODES.items():
         for neighbor_id in node["connections"]:
             edge = tuple(sorted((node_id, neighbor_id)))
-            if edge in drawn_edges:
-                continue
-            drawn_edges.add(edge)
-            traveled = node_id in visited and neighbor_id in visited
-            color = (210, 180, 90) if traveled else (90, 90, 105)
-            width = 5 if traveled else 3
-            pygame.draw.line(surface, color, NODES[node_id]["pos"], NODES[neighbor_id]["pos"], width)
+            if edge not in drawn_edges:
+                drawn_edges.add(edge)
+                draw_road(surface, NODES[node_id]["pos"], NODES[neighbor_id]["pos"])
 
-    for node_id, node in NODES.items():
-        x, y = node["pos"]
+    chapter_by_node = chapter_by_node or {}
+    for number, (node_id, node) in enumerate(NODES.items(), start=1):
+        pos = node["pos"]
         is_current = node_id == current_node
-        is_visited = node_id in visited
-        base_color = NODE_COLORS.get(node["type"], WAYPOINT_COLOR)
-        if not is_visited:
-            base_color = tuple(c // 2 for c in base_color)
+        if node["type"] in ROOM_TYPES:
+            draw_house(surface, pos, node["type"], is_current, node_id in rooms_used)
+        elif node["type"] in NODE_COLORS:
+            chapter = chapter_by_node.get(node_id)
+            label = str(chapter["chapter"]) if chapter else "!"
+            color = NODE_COLORS[node["type"]]
+            if node_id not in visited:
+                color = tuple(int(c * 0.7) for c in color)
+            draw_square(surface, font, pos, color, label, is_current, node_id in cleared)
+        else:
+            # A town: a junction stone on the road.
+            pygame.draw.circle(surface, INK, (pos[0], pos[1] + 3), 17)
+            pygame.draw.circle(surface, WAYPOINT_COLOR, pos, 15)
+            pygame.draw.circle(surface, CURSOR_COLOR if is_current else (230, 230, 230), pos, 15, 3)
 
-        radius = 22 if is_current else 16
-        pygame.draw.circle(surface, (10, 10, 15), (x, y), radius + 3)
-        pygame.draw.circle(surface, base_color, (x, y), radius)
-        pygame.draw.circle(surface, PANEL_BORDER if is_current else (230, 230, 230), (x, y), radius, 3)
 
-        label = font.render(node["name"], True, TEXT_MAIN if is_visited else TEXT_DIM)
-        surface.blit(label, (x - label.get_width() // 2, y + radius + 8))
+def draw_node_tag(surface, font, node, pos):
+    """The node's name on a small tag just below its square (the hero's
+    marker stands on top of it)."""
+    text = font.render(node["name"], True, (255, 250, 236))
+    tag = text.get_rect(midtop=(pos[0], pos[1] + NODE_HALF + 12)).inflate(16, 8)
+    tag.clamp_ip(surface.get_rect())
+    pygame.draw.rect(surface, PANEL_BG, tag, border_radius=8)
+    pygame.draw.rect(surface, PANEL_BORDER, tag, 2, border_radius=8)
+    surface.blit(text, text.get_rect(center=tag.center))
+
+
+def draw_room_popup(surface, font, popup, frame=None):
+    panel = pygame.Rect(0, 0, 820, 140 + 34 * max(1, len(popup["lines"])))
+    panel.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+    draw_panel_bg(surface, panel, frame)
+    inner = frame_content_rect(panel, frame) if frame else panel.inflate(-32, -32)
+    surface.blit(get_font(30, bold=True).render(popup["title"], True, CURSOR_COLOR), (inner.x + 8, inner.y + 4))
+    words, line, y = popup["text"].split(), "", inner.y + 46
+    for word in words:
+        trial = f"{line} {word}".strip()
+        if font.size(trial)[0] > inner.width - 16:
+            surface.blit(font.render(line, True, TEXT_MAIN), (inner.x + 8, y))
+            line, y = word, y + 26
+        else:
+            line = trial
+    surface.blit(font.render(line, True, TEXT_MAIN), (inner.x + 8, y))
+    y += 40
+    for entry in popup["lines"]:
+        surface.blit(font.render(entry, True, (255, 215, 0)), (inner.x + 24, y))
+        y += 30
+    hint = font.render("[Click / Enter] Continue", True, TEXT_DIM)
+    surface.blit(hint, hint.get_rect(bottomright=(inner.right - 8, inner.bottom - 2)))
 
 
 def draw_troop_marker(surface, leader_icon, pos, bob_offset):
@@ -287,8 +387,9 @@ def draw_unit_list(surface, font, units, portraits, index, frame=None):
         pointer = "->" if selected else "  "
         surface.blit(font.render(f"{pointer} {unit.name}", True, name_color), (content.x + 66, row_y))
         surface.blit(font.render(unit.char_class, True, TEXT_DIM), (content.x + 66, row_y + 18))
-        stats_text = f"Faith {round(unit.faith):3}/{FAITH_CAP}   MP {unit.mp:2}/{unit.max_mp}"
-        surface.blit(font.render(stats_text, True, TEAM_COLOR), (content.x + 246, row_y + 6))
+        stats = font.render(f"Faith {round(unit.faith):3}/{FAITH_CAP}   Stamina", True, TEAM_COLOR)
+        surface.blit(stats, (content.x + 246, row_y + 6))
+        draw_stamina_dots(surface, content.x + 254 + stats.get_width(), row_y + 10, unit.mp, unit.max_mp, radius=5, gap=3)
 
 
 # Display labels for stats shown to the player. Magic Attack/Magic Defense
@@ -313,7 +414,7 @@ def stat_label(stat_key):
 # in stat_hover_rects below.
 STAT_TOOLTIPS = {
     "faith": "Doubles as this unit's health - reaching 0 removes them from battle. Preaching an enemy's Faith up to the cap converts them to your side.",
-    "mp": "Spent to cast skills that have an MP cost. Fully restored by Myrrh.",
+    "mp": "Stamina points: skills marked with a dot spend one. You regain one each turn; Myrrh restores them all.",
     "magic_attack": "Adds directly onto this unit's effective Faith when it Preaches or Heals another unit, making both stronger.",
     "magic_defense": "This unit's armor - reduces the chance an enemy's Physical attack lands on them.",
     "bravery": "A chance, once per this unit's own turn, to catch a surge of Morale - permanently +5 Faith, +1 Move, +1 Jump, +5 Speed for the rest of the battle.",
@@ -367,7 +468,9 @@ def draw_unit_detail(surface, font, unit, portraits, frame=None):
     surface.blit(font.render(unit.name, True, PANEL_BORDER), (cx + 16, cy + 12))
     surface.blit(font.render(unit.char_class, True, TEXT_DIM), (cx + 170, cy + 62))
     surface.blit(font.render(f"Faith  {round(unit.faith):3} / {FAITH_CAP}", True, (255, 215, 0)), (cx + 170, cy + 84))
-    surface.blit(font.render(f"MP  {unit.mp:3} / {unit.max_mp}", True, (120, 170, 240)), (cx + 170, cy + 104))
+    stamina = font.render("Stamina", True, (120, 170, 240))
+    surface.blit(stamina, (cx + 170, cy + 104))
+    draw_stamina_dots(surface, cx + 180 + stamina.get_width(), cy + 106, unit.mp, unit.max_mp, radius=6)
 
     pygame.draw.line(surface, (70, 70, 85), (cx + 16, cy + 150), (cx + width - 16, cy + 150), 1)
 
@@ -581,10 +684,6 @@ async def main(hero=None):
     clock = pygame.time.Clock()
     font = get_font(22)
 
-    map_background = load_image_safe("assets/world_map.jpg")
-    if map_background:
-        map_background = pygame.transform.smoothscale(map_background, (SCREEN_WIDTH, SCREEN_HEIGHT))
-
     ui_frame = load_nine_slice_frame()
 
     stage_manifest = load_stage_manifest()
@@ -608,12 +707,27 @@ async def main(hero=None):
     books_registry = load_books_from_csv()
     book_pool = sorted(books_registry.keys())
 
+    rooms = load_world_map_rooms()
+    base_item_uses = {name: data["uses"] for name, data in load_items_from_csv().items()}
+
     story = load_story()
     chapters = load_chapters()
     chapter_by_node = {c["node_id"]: c for c in chapters}
     profile = hero or {}
     hero_name = profile.get("name")
     heard = set(profile.get("heard", []))  # ids of the scenes played through
+    # Rooms already visited, stages won, and gift items not yet used up.
+    rooms_used = set(profile.get("rooms_used", []))
+    cleared = set(profile.get("cleared", []))
+    satchel_gifts = {name: count for name, count in profile.get("satchel", {}).items() if count > 0}
+    # The party's progress (levels, EXP, books, equipment) between sessions.
+    for u in units:
+        saved = profile.get("party", {}).get(u.name)
+        if saved:
+            u.level, u.exp = saved.get("level", u.level), saved.get("exp", u.exp)
+            u.books, u.book_turns, u.book_gain = saved.get("books", {}), saved.get("turns", {}), saved.get("gain", {})
+            u.equipment = saved.get("equipment", u.equipment)
+    room_popup = None
 
     state = STATE_MAP
     current_node = profile.get("node") if profile.get("node") in NODES else START_NODE
@@ -640,7 +754,14 @@ async def main(hero=None):
             for u in units
         }
         result = await run_battle(stage=stage_manifest.get(node_id), equipment_loadout=equipment_loadout,
-                                  book_loadout=book_loadout, hero=hero, from_map=True)
+                                  book_loadout=book_loadout, hero=hero, from_map=True, bonus_items=dict(satchel_gifts))
+        # Base uses refill every battle; gifts last until they're used up
+        # (the base uses go first).
+        left = result.get("satchel", {})
+        for name in list(satchel_gifts):
+            satchel_gifts[name] = max(0, min(satchel_gifts[name], left.get(name, 0) - base_item_uses.get(name, 0)))
+        if result["victory"]:
+            cleared.add(node_id)
         progress = result["units"]
         if progress:
             for u in units:
@@ -653,12 +774,44 @@ async def main(hero=None):
                     u.exp = p.get("exp", u.exp)
         pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("The Road to Jerusalem")
+        save_progress()
         return result["victory"]
 
     def save_progress():
         if hero:
-            profile.update(heard=sorted(heard), node=current_node, visited=sorted(visited))
+            party = {u.name: {"level": u.level, "exp": u.exp, "books": dict(u.books), "turns": dict(u.book_turns),
+                              "gain": dict(u.book_gain), "equipment": dict(u.equipment)} for u in units}
+            profile.update(heard=sorted(heard), node=current_node, visited=sorted(visited), rooms_used=sorted(rooms_used),
+                           cleared=sorted(cleared), satchel={n: c for n, c in satchel_gifts.items() if c > 0}, party=party)
             save_profile(profile)
+
+    def visit_room(node_id):
+        """A library or party room's one-time reward. Returns the popup."""
+        node, room = NODES[node_id], rooms.get(node_id, {})
+        if node_id in rooms_used:
+            return {"title": node["name"], "text": "You've already visited here. Its doors are closed for now.", "lines": []}
+        lines = []
+        turns = room.get("book_turns", 0)
+        if turns:
+            readers = [u for u in units if any(u.books.values())]
+            for u in readers:
+                before = sum(u.book_gain.values())
+                for _ in range(turns):
+                    apply_book_growth(u, books_registry)
+                lines.append(f"{u.name}: +{turns} days of reading, +{sum(u.book_gain.values()) - before} to book stats")
+            if not readers:
+                return {"title": node["name"], "text": room.get("text", ""),
+                        "lines": ["No one is carrying devotion books yet - equip some from Menu > Unit > Books, then come back."]}
+        if room.get("exp"):
+            for u in units:
+                levels = gain_exp(u, room["exp"])
+                lines.append(f"{u.name}: +{room['exp']} EXP" + (f"  - LEVEL UP to Lv {u.level}!" if levels else ""))
+        for name, count in room.get("items", {}).items():
+            satchel_gifts[name] = satchel_gifts.get(name, 0) + count
+            lines.append(f"+{count} {name} for the satchel (kept until used)")
+        rooms_used.add(node_id)
+        save_progress()
+        return {"title": node["name"], "text": room.get("text", ""), "lines": lines}
 
     async def play(scene_id):
         if await play_scene(screen, scene_id, hero_name=hero_name, story=story):
@@ -705,10 +858,15 @@ async def main(hero=None):
                 if state == STATE_MAP and menu_button.collidepoint(event.pos):
                     state = STATE_MENU
                     menu_index = 0
+                elif state == STATE_ROOM:
+                    state = STATE_MAP
                 elif state == STATE_MAP:
                     clicked_node = node_at_pos(event.pos)
                     if clicked_node == current_node:
-                        if NODES[current_node]["type"] in NODE_COLORS:
+                        if NODES[current_node]["type"] in ROOM_TYPES:
+                            room_popup = visit_room(current_node)
+                            state = STATE_ROOM
+                        elif NODES[current_node]["type"] in NODE_COLORS:
                             await enter_node(current_node)
                     elif clicked_node is not None and clicked_node in NODES[current_node]["connections"]:
                         transition_from = current_node
@@ -812,8 +970,15 @@ async def main(hero=None):
                             transition_progress = 0.0
                             state = STATE_TRANSITION
                     elif event.key == pygame.K_RETURN:
-                        if NODES[current_node]["type"] in NODE_COLORS:
+                        if NODES[current_node]["type"] in ROOM_TYPES:
+                            room_popup = visit_room(current_node)
+                            state = STATE_ROOM
+                        elif NODES[current_node]["type"] in NODE_COLORS:
                             await enter_node(current_node)
+
+                elif state == STATE_ROOM:
+                    if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
+                        state = STATE_MAP
 
                 elif state == STATE_MENU:
                     if event.key == pygame.K_UP:
@@ -899,11 +1064,8 @@ async def main(hero=None):
                 state = STATE_MAP
 
         # --- DRAW ---
-        if map_background:
-            screen.blit(map_background, (0, 0))
-        else:
-            screen.fill((30, 34, 40))
-        draw_path_and_nodes(screen, font, current_node, visited)
+        draw_world_background(screen)
+        draw_path_and_nodes(screen, font, current_node, visited, chapter_by_node, cleared, rooms_used)
 
         if state == STATE_TRANSITION:
             fx, fy = NODES[transition_from]["pos"]
@@ -912,6 +1074,10 @@ async def main(hero=None):
         else:
             pos = NODES[current_node]["pos"]
         draw_troop_marker(screen, leader_icon, pos, bob_offset)
+        if state in (STATE_MAP, STATE_ROOM):
+            hovered = node_at_pos(mouse_pos)
+            for tagged in {current_node, hovered} - {None}:
+                draw_node_tag(screen, font, NODES[tagged], NODES[tagged]["pos"])
 
         pygame.draw.rect(screen, PANEL_BG, menu_button)
         pygame.draw.rect(screen, PANEL_BORDER, menu_button, 2)
@@ -924,8 +1090,14 @@ async def main(hero=None):
                 draw_hint_bar(screen, font, f"Click/Arrows: Travel   |   Click node again (or Enter) to begin Story {chapter['chapter']}: {chapter['title']}   |   [Esc] Menu")
             elif node["type"] == "stage":
                 draw_hint_bar(screen, font, f"Click/Arrows: Travel   |   Click node again (or Enter) to begin battle at {node['name']}   |   [Esc] Menu")
+            elif node["type"] in ROOM_TYPES:
+                kind = "Library" if node["type"] == "library" else "Party Room"
+                status = "visited" if current_node in rooms_used else "click again (or Enter) to go in"
+                draw_hint_bar(screen, font, f"Click/Arrows: Travel   |   {node['name']} ({kind}) - {status}   |   [Esc] Menu")
             else:
                 draw_hint_bar(screen, font, f"Click/Arrows: Travel   |   {node['name']} (Waypoint)   |   [Esc] Menu")
+        elif state == STATE_ROOM and room_popup:
+            draw_room_popup(screen, font, room_popup, ui_frame)
         elif state == STATE_MENU:
             draw_command_menu(screen, font, MENU_OPTIONS, menu_index, "MENU", ui_frame)
         elif state == STATE_STORY:

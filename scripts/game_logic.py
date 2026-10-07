@@ -42,6 +42,7 @@ from scripts.config import (
     CLASS_SKILLSETS,
 )
 from scripts.skybox import Skybox
+from scripts import icons
 from scripts.hero import hero_character
 from scripts.assets import (
     load_image_safe,
@@ -101,6 +102,9 @@ class Unit:
         self.mount = data.get("mount", "")
         self.mv = data["mv"] + MOUNTS.get(self.mount, {}).get("mv", 0)
         self.jump = data["jump"]
+        # Stamina: a few points (2-5) spent by the skills that cost one, and
+        # regained one per turn (see STAMINA_REGEN). Still called mp/max_mp
+        # internally.
         self.max_mp = data["mp"]
         self.mp = data["mp"]
         self.skills = data["skills"]
@@ -153,6 +157,10 @@ class Unit:
         # left during which this unit's faith can't be shaken (Shield of Faith).
         self.buffs = []
         self.faith_ward_turns = 0
+        # Blind (see BLIND_TURNS): turns left, and whether it's blind on its
+        # current turn.
+        self.blind_turns = 0
+        self.blind = False
         # The player's own character, built from the new-game survey.
         self.is_hero = bool(data.get("hero"))
         # Taken off the field by Persecute (see arrest).
@@ -346,7 +354,7 @@ def get_skill_targets(unit, skill_name, units_list=None):
         for y in range(MAP_ROWS):
             distance = abs(unit.x - x) + abs(unit.y - y)
             if distance <= max_range:
-                if distance == 0 and not (skill_data["type"] == "Heal" or skill_name in ("Defend", "Lead")
+                if distance == 0 and not (skill_data["type"] == "Heal" or skill_name in ("Defend", "Lead", "Heal Blind")
                                           or skill_name in SELF_CENTRED_SKILLS):
                     continue
                 if units_list is not None and any(u.x == x and u.y == y and u.is_alive() and u.disabled for u in units_list):
@@ -568,7 +576,8 @@ def physical_hit_chance(attacker, target, units_list=None):
     chance += officer_aura_bonus(attacker, units_list)
     chance -= target.magic_defense * MAGIC_DEFENSE_HIT_SCALE
     chance -= CLASS_HIT_PENALTY_AGAINST.get(target.char_class, 0.0)
-    return max(PHYSICAL_MIN_HIT_CHANCE, min(PHYSICAL_MAX_HIT_CHANCE, chance))
+    chance = max(PHYSICAL_MIN_HIT_CHANCE, min(PHYSICAL_MAX_HIT_CHANCE, chance))
+    return chance * BLIND_HIT_MULTIPLIER if is_blind(attacker) else chance
 
 
 # Morale: at the start of each of its turns a unit rolls for a surge of
@@ -611,16 +620,17 @@ MAX_LEVEL = 99
 # stats can be rebuilt exactly from its level (apply_level_bonuses), the
 # same way equipment and book bonuses are re-applied each battle.
 LEVEL_GROWTH = {
-    "Missionary": {"max_mp": 5, "magic_attack": 2, "magic_defense": 1},
-    "Apostle": {"max_mp": 3, "magic_attack": 1, "magic_defense": 1},
-    "Soldier": {"max_mp": 1, "magic_attack": 1, "magic_defense": 2},
-    "Sergeant": {"max_mp": 1, "magic_attack": 1, "magic_defense": 2},
-    "Officer": {"max_mp": 2, "magic_attack": 1, "magic_defense": 2},
-    "Archer": {"max_mp": 1, "magic_attack": 1, "magic_defense": 1},
-    "Shieldbearer": {"max_mp": 1, "magic_attack": 0, "magic_defense": 3},
-    "Medic": {"max_mp": 2, "magic_attack": 2, "magic_defense": 1},
+    "Missionary": {"max_mp": 0, "magic_attack": 2, "magic_defense": 1},
+    "Apostle": {"max_mp": 0, "magic_attack": 1, "magic_defense": 1},
+    "Soldier": {"max_mp": 0, "magic_attack": 1, "magic_defense": 2},
+    "Sergeant": {"max_mp": 0, "magic_attack": 1, "magic_defense": 2},
+    "Officer": {"max_mp": 0, "magic_attack": 1, "magic_defense": 2},
+    "Archer": {"max_mp": 0, "magic_attack": 1, "magic_defense": 1},
+    "Shieldbearer": {"max_mp": 0, "magic_attack": 0, "magic_defense": 3},
+    "Medic": {"max_mp": 0, "magic_attack": 2, "magic_defense": 1},
 }
-DEFAULT_LEVEL_GROWTH = {"max_mp": 2, "magic_attack": 1, "magic_defense": 1}
+# max_mp is Stamina, which stays the same at every level.
+DEFAULT_LEVEL_GROWTH = {"max_mp": 0, "magic_attack": 1, "magic_defense": 1}
 # Speed grows slowly, as in FFT: +1 on every Nth level.
 SPEED_GROWTH_EVERY = 5
 EXP_POPUP_MS = 1400
@@ -716,6 +726,7 @@ EVENT_BANNER_NAMES = {
     "@escaped": "Escaped!",
     "@heavenly_light": "A Light from Heaven",
     "@arrested": "Arrested!",
+    "@blind": "Blind",
 }
 SKILL_BANNER_MS = 1200
 # With more banners waiting, each is shown for less time so they keep up.
@@ -845,6 +856,10 @@ def resolve_physical_hit(attacker, target, skill_name, units_list=None):
 
 
 def skill_status_message(skill_name, caster, target):
+    if skill_name == "Blind":
+        return f"{caster.name} throws dust in {target.name}'s eyes - they're blinded for {BLIND_TURNS} turns!"
+    if skill_name == "Heal Blind":
+        return f"{caster.name} lays hands on {target.name} - their sight returns!"
     if skill_name in SIGNATURE_SKILLS:
         return LAST_SIGNATURE_LOG
     if skill_name == "Shove":
@@ -936,6 +951,13 @@ def _resolve_skill_status(skill_name, caster, target, units_list):
     if skill_name == "Defend":
         target.guarded = True
         return True
+    if skill_name == "Blind":
+        if random.random() < status_resist_chance(target):
+            return False
+        target.blind_turns = BLIND_TURNS
+        return True
+    if skill_name == "Heal Blind":
+        return cure_blind(target)
     if skill_name == "Rally":
         return apply_rally(target)
     if skill_name == "Lead":
@@ -1203,6 +1225,46 @@ def arrest(unit):
     kill_unit(unit)
 
 
+# Blind - inflicted by some Legionnaires' Blind skill (Patience resists): a
+# blinded unit's Preach and Physical attacks land BLIND_HIT_MULTIPLIER as
+# often, for its next BLIND_TURNS turns. It can still move and act. Heal
+# Blind, a Healing Salve or Intercession cures it.
+BLIND_TURNS = 3
+BLIND_HIT_MULTIPLIER = 0.5
+
+
+def is_blind(unit):
+    return unit.blind or unit.blind_turns > 0
+
+
+def cure_blind(unit):
+    was_blind = is_blind(unit)
+    unit.blind_turns = 0
+    unit.blind = False
+    return was_blind
+
+
+# Stamina: each skill with a cost spends one point; a unit regains
+# STAMINA_REGEN at the start of each of its turns, up to its maximum.
+STAMINA_REGEN = 1
+STAMINA_COLOR = (90, 200, 255)
+STAMINA_EMPTY = (40, 60, 80)
+
+
+def draw_stamina_dots(surface, x, y, current, maximum, radius=6, gap=4):
+    """Stamina as a row of dots from (x, y) - filled for each point left,
+    hollow for each spent. Returns the row's width."""
+    for i in range(maximum):
+        centre = (x + radius + i * (radius * 2 + gap), y + radius)
+        if i < current:
+            pygame.draw.circle(surface, STAMINA_COLOR, centre, radius)
+            pygame.draw.circle(surface, (225, 245, 255), centre, radius, 1)
+        else:
+            pygame.draw.circle(surface, STAMINA_EMPTY, centre, radius)
+            pygame.draw.circle(surface, STAMINA_COLOR, centre, radius, 1)
+    return maximum * (radius * 2 + gap) - gap
+
+
 FAITH_TRANSFER_RATE = 0.2
 
 # A Player unit whose faith is shaken all the way to 0 falls into Despair:
@@ -1227,10 +1289,15 @@ def begin_turn(unit, units_list=None):
     means the unit left the battle and its turn is over."""
     unit.has_moved = False
     unit.has_acted = False
+    unit.mp = min(unit.max_mp, unit.mp + STAMINA_REGEN)
     if roll_flee(unit, units_list):
         return {"fled": True, "snared": False, "stunned": False, "despair_log": None,
                 "lead_wore_off": False, "disarmed": False}
     end_morale_buff(unit)
+    unit.blind = unit.blind_turns > 0
+    if unit.blind:
+        unit.blind_turns -= 1
+        queue_effect("@blind", unit, unit)
     tick_buffs(unit)
     if unit.faith_ward_turns > 0:
         unit.faith_ward_turns -= 1
@@ -1298,7 +1365,8 @@ FAITH_MAX_HIT_CHANCE = 0.98
 
 def faith_hit_chance(preacher):
     chance = FAITH_BASE_HIT_CHANCE + preacher.love * FAITH_HIT_PER_LOVE
-    return max(FAITH_MIN_HIT_CHANCE, min(FAITH_MAX_HIT_CHANCE, chance))
+    chance = max(FAITH_MIN_HIT_CHANCE, min(FAITH_MAX_HIT_CHANCE, chance))
+    return chance * BLIND_HIT_MULTIPLIER if is_blind(preacher) else chance
 
 
 def resolve_faith_attack(preacher, target, skill_name="Preach"):
@@ -1390,7 +1458,7 @@ SIGNATURE_PREVIEW = {
     "Peacemaker": f"Disarm {PEACEMAKER_TURNS} turns",
     "Inspire": f"Allies faith +{INSPIRE_FAITH}",
     "Good News": "Preach the crowd",
-    "Provision": "MP full, freed",
+    "Provision": "Stamina full, freed",
     "Shield of Faith": "Guard + faith ward",
     "Arrest": f"Snare {ARREST_SNARE_TURNS} + disarm",
     "Breaking Bread": "Faith + Love",
@@ -1440,6 +1508,7 @@ def raise_faith(unit, amount):
 
 def cure_statuses(unit):
     unit.stunned_turns = unit.snared_turns = unit.disarmed_turns = 0
+    cure_blind(unit)
 
 
 def resolve_signature(skill_name, caster, target, units_list):
@@ -1526,7 +1595,7 @@ def resolve_signature(skill_name, caster, target, units_list):
         target.mp = target.max_mp
         cure_statuses(target)
         raise_faith(target, PROVISION_FAITH)
-        return done("hit", f"{caster.name} resupplies {target.name} - MP restored and ready to go!")
+        return done("hit", f"{caster.name} resupplies {target.name} - stamina restored and ready to go!")
     if skill_name == "Shield of Faith":
         target.guarded = True
         target.faith_ward_turns = max(target.faith_ward_turns, SHIELD_OF_FAITH_TURNS)
@@ -1581,6 +1650,7 @@ def apply_item_effect(item_name, user, target, units_list=None):
     if effect == "cure_status":
         target.stunned_turns = 0
         target.snared_turns = 0
+        cure_blind(target)
         if target is user:
             return f"{user.name} tends their own wounds with a Healing Salve."
         return f"{user.name} applies a Healing Salve to {target.name}, easing their wounds!"
@@ -1658,6 +1728,11 @@ def draw_dialogue_window(surface, speaker, text, frame=None):
 # The action menu pops up beside the mouse: offset from the cursor, and
 # flipped to the cursor's other side when it would run off the screen.
 MENU_CURSOR_OFFSET = (18, 12)
+# Icon tile size, the gap between tiles, and the label strip above them.
+MENU_TILE = 45  # 30% smaller than the original 64
+MENU_TILE_GAP = 6
+MENU_LABEL_HEIGHT = 46
+SUBMENU_STATES = ("SUBMENU_ACT", "SUBMENU_ITEM")
 ACTION_MENU_STATES = ("MENU", "SUBMENU_ACT", "SUBMENU_ITEM")
 # States the on-screen Back button (for touch screens) backs out of.
 BACK_STATES = ("SUBMENU_ACT", "SUBMENU_ITEM", "MOVE_SELECT", "TARGET_SELECT")
@@ -1666,16 +1741,23 @@ STATS_PANEL_RECT = pygame.Rect(10, 10, 280, 180)
 MENU_SCREEN_MARGIN = 10
 
 
-def action_menu_layout(current_menu, frame=None, anchor=None):
-    """Shared by draw_action_menu and the mouse-click hit-test below it in
-    main() - both need the exact same panel/content geometry, or clicks
-    stop lining up with what's actually drawn. `anchor` is where the mouse
-    was when the menu opened; without one the menu sits top-right."""
-    width = 300
-    # The box grows/shrinks with however many rows current_menu has (the
-    # root menu has 4 entries; skill/item submenus vary in length) - no
-    # portrait is shown here, so there's nothing else to reserve space for.
-    box_height = 110 + len(current_menu) * 26
+def action_menu_layout(current_menu, frame=None, anchor=None, back=False):
+    """The action menu is a horizontal bar of icon tiles, Tactics Ogre style:
+    one tile per entry (plus a Back tile in the Act/Item submenus when `back`)
+    under a label naming the highlighted one. Shared by draw_action_menu and
+    the click/hover hit-tests in main() - both need the exact same geometry.
+    Returns (panel_rect, tile_rects). `anchor` is where the mouse was when
+    the menu opened; without one the bar sits top-right."""
+    count = len(current_menu) + (1 if back else 0)
+    inner_w = count * MENU_TILE + (count - 1) * MENU_TILE_GAP
+    inner_h = MENU_LABEL_HEIGHT + MENU_TILE
+    if frame:
+        probe = pygame.Rect(0, 0, 400, 300)
+        inside = frame_content_rect(probe, frame)
+        left, top, right, bottom = inside.x, inside.y, probe.right - inside.right, probe.bottom - inside.bottom
+    else:
+        left = top = right = bottom = 10
+    width, box_height = left + inner_w + right, top + inner_h + bottom
     if anchor is None:
         mx, my = SCREEN_WIDTH - width - 20, 30
     else:
@@ -1686,34 +1768,97 @@ def action_menu_layout(current_menu, frame=None, anchor=None):
         mx = max(MENU_SCREEN_MARGIN, min(mx, SCREEN_WIDTH - width - MENU_SCREEN_MARGIN))
         my = max(MENU_SCREEN_MARGIN, min(my, SCREEN_HEIGHT - box_height - MENU_SCREEN_MARGIN))
     panel_rect = pygame.Rect(mx, my, width, box_height)
-    if frame:
-        content = frame_content_rect(panel_rect, frame)
-    else:
-        content = pygame.Rect(mx + 10, my + 10, width - 20, box_height - 20)
-    return panel_rect, content
+    tiles = [pygame.Rect(mx + left + i * (MENU_TILE + MENU_TILE_GAP), my + top + MENU_LABEL_HEIGHT, MENU_TILE, MENU_TILE)
+             for i in range(count)]
+    return panel_rect, tiles
 
 
-def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, team_inventory=None, frame=None, anchor=None):
+_class_signatures = None
+
+
+def class_signature_skills():
+    """The sixteen class signature skills (they get a star on their icon)."""
+    global _class_signatures
+    if _class_signatures is None:
+        try:
+            from scripts.hero import load_classes_from_csv
+            _class_signatures = {row["signature"] for row in load_classes_from_csv().values()}
+        except (OSError, KeyError):
+            _class_signatures = set()
+    return _class_signatures
+
+
+def menu_entry_disabled(opt, active_unit, units, team_inventory, submenu):
+    if submenu:
+        skill = SKILL_REGISTRY.get(opt)
+        return bool(skill) and active_unit.mp < skill["mp_cost"]
+    no_items_left = not any((team_inventory or {}).get(active_unit.team, {}).values())
+    return ((opt == "Move" and (active_unit.has_moved or not can_unit_move(active_unit, units)))
+            or (opt == "Act" and active_unit.has_acted)
+            or (opt == "Item" and (active_unit.has_acted or no_items_left)))
+
+
+def menu_entry_label(opt, active_unit, team_inventory, submenu):
+    """(name, detail) shown above the bar for the highlighted tile."""
+    if opt == "Back":
+        return "Back", "Return to the action menu"
+    if opt == "Wait":
+        return "Wait", "End this unit's turn"
+    if not submenu:
+        return opt, {"Move": f"Move up to {active_unit.mv} tiles", "Act": "Use a skill",
+                     "Item": "Use something from the satchel"}.get(opt, "")
+    skill = SKILL_REGISTRY.get(opt)
+    if skill:
+        cost = f"{skill['mp_cost']} Stamina" if skill["mp_cost"] else "Free"
+        detail = f"{cost}  -  Range {skill['range']}"
+        if opt in SIGNATURE_PREVIEW:
+            detail += f"  -  {SIGNATURE_PREVIEW[opt]}"
+        return opt, detail
+    left = (team_inventory or {}).get(active_unit.team, {}).get(opt, 0)
+    return opt, f"{left} left"
+
+
+def draw_action_menu(surface, font, active_unit, current_menu, menu_index, units, team_inventory=None, frame=None,
+                     anchor=None, submenu=False):
     if not active_unit:
         return
-    panel_rect, content = action_menu_layout(current_menu, frame, anchor)
+    panel_rect, tiles = action_menu_layout(current_menu, frame, anchor, back=submenu)
     if frame:
         draw_nine_slice_panel(surface, panel_rect, frame)
     else:
         pygame.draw.rect(surface, (20, 20, 30), panel_rect)
         pygame.draw.rect(surface, CURSOR_COLOR, panel_rect, 2)
-
-    surface.blit(font.render(f"{active_unit.name} Actions", True, (255, 255, 255)), (content.x, content.y))
-    for idx, opt in enumerate(current_menu):
-        no_items_left = not any((team_inventory or {}).get(active_unit.team, {}).values())
-        if ((opt == "Move" and (active_unit.has_moved or not can_unit_move(active_unit, units)))
-                or (opt == "Act" and active_unit.has_acted)
-                or (opt == "Item" and (active_unit.has_acted or no_items_left))):
-            opt_color = (70, 70, 70)
+    entries = list(current_menu) + (["Back"] if submenu else [])
+    signatures = class_signature_skills()
+    for idx, (opt, rect) in enumerate(zip(entries, tiles)):
+        skill = SKILL_REGISTRY.get(opt) if submenu else None
+        if opt == "Back":
+            color, kind = icons.BACK_COLOR, None
+        elif opt == "Wait":
+            color, kind = icons.WAIT_COLOR, None
+        elif skill:
+            color, kind = icons.SKILL_TYPE_COLORS.get(skill["type"], icons.COMMAND_COLOR), skill["type"]
+        elif submenu:
+            color, kind = icons.ITEM_COLOR, None
         else:
-            opt_color = CURSOR_COLOR if idx == menu_index else (170, 170, 170)
-        pointer = " -> " if idx == menu_index else "    "
-        surface.blit(font.render(f"{pointer}{opt}", True, opt_color), (content.x, content.y + 35 + (idx * 26)))
+            color, kind = icons.COMMAND_COLOR, None
+        disabled = opt not in ("Back", "Wait") and menu_entry_disabled(opt, active_unit, units, team_inventory, submenu)
+        highlighted = idx == menu_index
+        tile = icons.icon(opt, MENU_TILE, color, kind, signature=opt in signatures, disabled=disabled)
+        lift = -4 if highlighted else 0
+        surface.blit(tile, (rect.x, rect.y + lift))
+        if highlighted:
+            pygame.draw.rect(surface, CURSOR_COLOR, rect.move(0, lift).inflate(6, 6), 3, border_radius=12)
+        if skill and skill["mp_cost"]:
+            # A skill that costs Stamina shows a stamina dot in its corner.
+            dot = (rect.right - 9, rect.bottom - 9 + lift)
+            pygame.draw.circle(surface, (14, 18, 32), dot, 8)
+            pygame.draw.circle(surface, STAMINA_COLOR, dot, 5)
+    if 0 <= menu_index < len(entries):
+        name, detail = menu_entry_label(entries[menu_index], active_unit, team_inventory, submenu)
+        label_y = tiles[0].y - MENU_LABEL_HEIGHT
+        surface.blit(get_font(22, bold=True).render(name, True, CURSOR_COLOR), (tiles[0].x, label_y))
+        surface.blit(get_font(15).render(detail, True, (210, 210, 210)), (tiles[0].x, label_y + 24))
 
 
 def draw_unit_profile(surface, font, unit, portraits, bottom_right):
@@ -1756,12 +1901,9 @@ def draw_unit_profile(surface, font, unit, portraits, bottom_right):
     surface.blit(faith_text, faith_text.get_rect(center=(bar_x + bar_w // 2, faith_y + bar_h // 2)))
 
     mp_y = faith_y + bar_h + 8
-    mp_pct = max(0, unit.mp / unit.max_mp) if unit.max_mp else 0
-    pygame.draw.rect(surface, (20, 20, 60), (bar_x, mp_y, bar_w, bar_h))
-    pygame.draw.rect(surface, (70, 140, 230), (bar_x, mp_y, int(bar_w * mp_pct), bar_h))
-    pygame.draw.rect(surface, (230, 230, 230), (bar_x, mp_y, bar_w, bar_h), 1)
-    mp_text = font.render(f"MP {unit.mp}/{unit.max_mp}", True, (255, 255, 255))
-    surface.blit(mp_text, mp_text.get_rect(center=(bar_x + bar_w // 2, mp_y + bar_h // 2)))
+    label = font.render("STAMINA", True, STAMINA_COLOR)
+    surface.blit(label, (bar_x, mp_y + (bar_h - label.get_height()) // 2))
+    draw_stamina_dots(surface, bar_x + label.get_width() + 10, mp_y + bar_h // 2 - 7, unit.mp, unit.max_mp, radius=7)
 
     # EXP toward the next level: a thin bar with its count beside it.
     exp_y = mp_y + bar_h + 6
@@ -1805,6 +1947,10 @@ def predict_action(attacker, target, skill_name, units_list=None):
         chance, outcome = 1 - status_resist_chance(target), "Snare 2 turns"
     elif skill_name == "Defend":
         chance, outcome = 1.0, "Guard"
+    elif skill_name == "Blind":
+        chance, outcome = 1 - status_resist_chance(target), f"Blind {BLIND_TURNS} turns"
+    elif skill_name == "Heal Blind":
+        chance, outcome = 1.0, "Cure Blind" if is_blind(target) else "Not blind"
     elif skill_name == "Rally":
         excess, _ = rally_need(target)
         faith_after = target.faith + (excess if target.team == "Player" else -excess)
@@ -1978,6 +2124,8 @@ def score_ai_candidate(unit, skill_name, skill_data, target, distance, units_lis
         if skill_name == "Lead":
             recipients = len(lead_recipients(unit, units_list))
             return 30 if recipients >= 2 else None
+        if skill_name == "Heal Blind":
+            return 65 if is_blind(target) else None
         if skill_name == "Rally":
             # Worth more the closer the ally was to being converted; freeing
             # a stunned/snared/disarmed ally is worth doing on its own.
@@ -1991,6 +2139,9 @@ def score_ai_candidate(unit, skill_name, skill_data, target, distance, units_lis
         cluster = shove_cluster_size(target, units_list)
         return 70 + 2 * cluster if cluster >= 1 else None
     if kind == "Status":
+        if skill_name == "Blind":
+            # Worth it on anyone not already blind - it halves their attacks.
+            return None if is_blind(target) else 34
         if skill_name == "Fish net":
             # A net is for catching someone at range, not a lock: never on a
             # target already snared, only on one 2+ tiles away, and never two
@@ -2104,6 +2255,32 @@ def get_render_order(map_cols, map_rows, rotation):
             cells.append((rx + ry, ry, rx, x, y))
     cells.sort()
     return [(x, y) for _, _, _, x, y in cells]
+
+
+# How large the battle map is drawn: the zoom it opens at, and the zoom
+# buttons' / Z-X keys' range.
+MAP_ZOOM_DEFAULT = 1.95
+MAP_ZOOM_MIN = 0.5
+MAP_ZOOM_MAX = 2.6
+MAP_ZOOM_STEP = 0.1
+MAP_SCREEN_CENTRE = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)
+
+
+def centred_map_origin(map_cols, map_rows, rotation, zoom, centre):
+    """The screen origin that puts the middle of the map's ground plane at
+    `centre` - so a map of any size opens centred at any zoom."""
+    corners = [iso_to_screen(x, y, 0, 0, 0, rotation, map_cols, map_rows, zoom)
+               for x, y in ((0, 0), (map_cols - 1, 0), (0, map_rows - 1), (map_cols - 1, map_rows - 1))]
+    xs, ys = [c[0] for c in corners], [c[1] for c in corners]
+    half_tile_h = TILE_HEIGHT * zoom / 2
+    return centre[0] - (min(xs) + max(xs)) / 2, centre[1] - ((min(ys) + max(ys)) / 2 + half_tile_h)
+
+
+def zoom_about(origin_x, origin_y, old_zoom, new_zoom, centre):
+    """The origin that keeps whatever is under `centre` in place when the
+    zoom changes."""
+    scale = new_zoom / old_zoom
+    return centre[0] - (centre[0] - origin_x) * scale, centre[1] - (centre[1] - origin_y) * scale
 
 
 def iso_to_screen(map_x, map_y, map_z, origin_x, origin_y, rotation=0, map_cols=0, map_rows=0, zoom=1.0):
@@ -2476,6 +2653,9 @@ def draw_unit(surface, sx, sy, unit, is_active=False, portraits=None, zoom=1.0, 
         # blue lines across the unit.
         surface.set_clip(previous_clip)
 
+    if is_blind(unit) and not fading:
+        marker = icons.icon("Blind", max(14, round(20 * zoom)), icons.SKILL_TYPE_COLORS["Status"])
+        surface.blit(marker, marker.get_rect(center=(cx + round(cell_w * 0.22), cy - round(cell_h / 2))))
     if unit.despair_turns > 0 and not fading:
         draw_despair_cloud(surface, cx, cy - round(cell_h / 2) - round(8 * zoom), zoom)
 
@@ -2532,7 +2712,7 @@ def draw_prop(surface, sx, sy, prop, zoom=1.0, light=1.0):
     surface.blit(sprite, (round(base_x - sprite_width / 2), round(base_y - sprite_height)))
 
 
-async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None, from_map=False):
+async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None, from_map=False, bonus_items=None):
     """One battle. `from_map` (entered from the world map) puts a World Map
     button on the end screen in place of the demo's thanks, and closing the
     window quits the game rather than dropping back to the map. Returns
@@ -2653,11 +2833,20 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
         if hero_entry:
             CHARACTER_ROSTER.append(hero_entry)
 
+    def starting_satchel():
+        """The Player side's satchel: every item's usual uses, plus any gifts
+        carried in from the world map's party rooms (`bonus_items`)."""
+        satchel = {name: data["uses"] for name, data in ITEM_REGISTRY.items()}
+        for name, count in (bonus_items or {}).items():
+            if name in satchel:
+                satchel[name] += count
+        return {"Player": satchel}
+
     units = spawn_units()
     # Faces already on the field aren't handed out again to converts.
     CONVERT_FACES_USED.update(u.face_portrait_path for u in units if u.face_portrait_path)
     # Only the Player side carries a satchel of supplies into battle.
-    team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
+    team_inventory = starting_satchel()
     dialogues = load_dialogues_from_csv(map_id=stage["node_id"] if stage else FIRST_STAGE_NODE)
     # Higher-detail portraits for HUD panels (turn order, action menu, unit
     # profile), independent of whatever art style the on-map token below
@@ -2693,7 +2882,10 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
     move_drag_start = None
     combat_log = "System Engine Initialized. Map loaded cleanly."
     rotation = 2
-    map_zoom = 1.5
+    map_zoom = MAP_ZOOM_DEFAULT
+    # Open with the map centred on screen (a little above the middle, clear
+    # of the action log along the bottom).
+    origin_x, origin_y = centred_map_origin(MAP_COLS, MAP_ROWS, rotation, map_zoom, MAP_SCREEN_CENTRE)
     active_projectile = None
     ai_pause_until = 0
     inspected_unit = None
@@ -2930,7 +3122,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                         menu_index = 0
                         selected_skill = None
                         selected_item = None
-                        team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
+                        team_inventory = starting_satchel()
                         cursor_x, cursor_y = 0, 0
                         valid_tiles = []
                         combat_log = "Game restarted. Combat resumed."
@@ -2948,7 +3140,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                         menu_index = 0
                         selected_skill = None
                         selected_item = None
-                        team_inventory = {"Player": {name: data["uses"] for name, data in ITEM_REGISTRY.items()}}
+                        team_inventory = starting_satchel()
                         cursor_x, cursor_y = 0, 0
                         valid_tiles = []
                         combat_log = "Game restarted. Combat resumed."
@@ -2958,6 +3150,13 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
 
             elif game_state == "PROJECTILE":
                 continue
+
+            elif (event.type == pygame.MOUSEMOTION and game_state in ACTION_MENU_STATES and active_unit
+                  and not getattr(event, "touch", False) and pan_anchor is None):
+                _, hover_tiles = action_menu_layout(current_menu, ui_frame, menu_anchor, back=game_state in SUBMENU_STATES)
+                hovered = next((i for i, r in enumerate(hover_tiles) if r.collidepoint(event.pos)), None)
+                if hovered is not None and hovered < len(current_menu):
+                    menu_index = hovered
 
             elif event.type == pygame.MOUSEMOTION and pan_anchor is not None:
                 (start_x, start_y), start_origin_x, start_origin_y = pan_anchor
@@ -3008,8 +3207,10 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                             continue
                         back_requested = True  # handled like a right-click below
                     elif zoom_in_button.collidepoint(event.pos) or zoom_out_button.collidepoint(event.pos):
-                        step = 0.1 if zoom_in_button.collidepoint(event.pos) else -0.1
-                        map_zoom = max(0.5, min(2.0, map_zoom + step))
+                        step = MAP_ZOOM_STEP if zoom_in_button.collidepoint(event.pos) else -MAP_ZOOM_STEP
+                        new_zoom = max(MAP_ZOOM_MIN, min(MAP_ZOOM_MAX, map_zoom + step))
+                        origin_x, origin_y = zoom_about(origin_x, origin_y, map_zoom, new_zoom, MAP_SCREEN_CENTRE)
+                        map_zoom = new_zoom
                         combat_log = f"Zoom: {map_zoom:.1f}x"
                         continue
                 if (event.button == 1 and not back_requested
@@ -3017,7 +3218,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                         and not any(r.collidepoint(event.pos) for r in (rotate_left_button, rotate_right_button, zoom_in_button,
                                                                          zoom_out_button, back_button, STATS_PANEL_RECT))
                         and not (game_state in ACTION_MENU_STATES and active_unit
-                                 and action_menu_layout(current_menu, ui_frame, menu_anchor)[0].collidepoint(event.pos))):
+                                 and action_menu_layout(current_menu, ui_frame, menu_anchor,
+                                                        back=game_state in SUBMENU_STATES)[0].collidepoint(event.pos))):
                     pan_anchor = (event.pos, origin_x, origin_y)
                 if event.button == 4:  # Mouse wheel up
                     stats_scroll = max(0, stats_scroll - 1)
@@ -3054,53 +3256,62 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                 if event.button == 1 and game_state != "TICKING":
                     # Menu clicks (left-side HUD)
                     if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"]:
-                        item_height = 26
                         mx, my = event.pos
-                        menu_panel_rect, menu_content = action_menu_layout(current_menu, ui_frame, menu_anchor)
+                        menu_panel_rect, menu_tiles = action_menu_layout(current_menu, ui_frame, menu_anchor,
+                                                                         back=game_state in SUBMENU_STATES)
                         if menu_panel_rect.collidepoint(event.pos):
-                            relative_y = my - (menu_content.y + 35)
-                            if 0 <= relative_y < len(current_menu) * item_height:
-                                clicked_index = int(relative_y // item_height)
-                                if clicked_index < len(current_menu):
-                                    menu_index = clicked_index
-                                    choice = current_menu[menu_index]
-                                    if game_state == "MENU":
-                                        if choice == "Move" and not active_unit.has_moved and can_unit_move(active_unit, units):
-                                            valid_tiles = get_valid_moves_a_star(active_unit, units)
-                                            move_drag_start = (active_unit.x, active_unit.y)
-                                            game_state = "MOVE_SELECT"
-                                        elif choice == "Act" and not active_unit.has_acted:
-                                            current_menu = active_unit.skills + ["Wait"]
-                                            menu_index = 0
-                                            game_state = "SUBMENU_ACT"
-                                        elif choice == "Item" and not active_unit.has_acted:
-                                            current_menu = [name for name, count in team_inventory.get(active_unit.team, {}).items() if count > 0] + ["Wait"]
-                                            menu_index = 0
-                                            game_state = "SUBMENU_ITEM"
-                                        elif choice == "Wait":
-                                            active_unit.ct = 0
-                                            game_state = "TICKING"
-                                    elif game_state == "SUBMENU_ACT":
-                                        if current_menu[menu_index] == "Wait":
-                                            active_unit.ct = 0
-                                            game_state = "TICKING"
-                                        else:
-                                            skill_name = current_menu[menu_index]
-                                            skill_rules = SKILL_REGISTRY[skill_name]
-                                            if active_unit.mp >= skill_rules["mp_cost"]:
-                                                selected_skill = skill_name
-                                                valid_tiles = get_skill_targets(active_unit, skill_name, units)
-                                                game_state = "TARGET_SELECT"
-                                            else:
-                                                combat_log = f"Failed! Requires {skill_rules['mp_cost']} MP."
-                                    elif game_state == "SUBMENU_ITEM":
-                                        if current_menu[menu_index] == "Wait":
-                                            active_unit.ct = 0
-                                            game_state = "TICKING"
-                                        else:
-                                            selected_item = current_menu[menu_index]
-                                            valid_tiles = get_item_targets(active_unit, selected_item, units)
+                            clicked_index = next((i for i, r in enumerate(menu_tiles) if r.collidepoint(event.pos)), None)
+                            if clicked_index == len(current_menu):  # the Back tile
+                                menu_index = 1 if game_state == "SUBMENU_ACT" else 2
+                                current_menu = main_menu
+                                selected_item = None
+                                game_state = "MENU"
+                                combat_log = "Back to the action menu."
+                            elif (clicked_index is not None and getattr(event, "touch", False)
+                                  and clicked_index != menu_index):
+                                # Touch screens can't hover: the first tap highlights
+                                # a tile (showing its name), a second tap confirms.
+                                menu_index = clicked_index
+                            elif clicked_index is not None:
+                                menu_index = clicked_index
+                                choice = current_menu[menu_index]
+                                if game_state == "MENU":
+                                    if choice == "Move" and not active_unit.has_moved and can_unit_move(active_unit, units):
+                                        valid_tiles = get_valid_moves_a_star(active_unit, units)
+                                        move_drag_start = (active_unit.x, active_unit.y)
+                                        game_state = "MOVE_SELECT"
+                                    elif choice == "Act" and not active_unit.has_acted:
+                                        current_menu = active_unit.skills + ["Wait"]
+                                        menu_index = 0
+                                        game_state = "SUBMENU_ACT"
+                                    elif choice == "Item" and not active_unit.has_acted:
+                                        current_menu = [name for name, count in team_inventory.get(active_unit.team, {}).items() if count > 0] + ["Wait"]
+                                        menu_index = 0
+                                        game_state = "SUBMENU_ITEM"
+                                    elif choice == "Wait":
+                                        active_unit.ct = 0
+                                        game_state = "TICKING"
+                                elif game_state == "SUBMENU_ACT":
+                                    if current_menu[menu_index] == "Wait":
+                                        active_unit.ct = 0
+                                        game_state = "TICKING"
+                                    else:
+                                        skill_name = current_menu[menu_index]
+                                        skill_rules = SKILL_REGISTRY[skill_name]
+                                        if active_unit.mp >= skill_rules["mp_cost"]:
+                                            selected_skill = skill_name
+                                            valid_tiles = get_skill_targets(active_unit, skill_name, units)
                                             game_state = "TARGET_SELECT"
+                                        else:
+                                            combat_log = f"Failed! Requires {skill_rules['mp_cost']} MP."
+                                elif game_state == "SUBMENU_ITEM":
+                                    if current_menu[menu_index] == "Wait":
+                                        active_unit.ct = 0
+                                        game_state = "TICKING"
+                                    else:
+                                        selected_item = current_menu[menu_index]
+                                        valid_tiles = get_item_targets(active_unit, selected_item, units)
+                                        game_state = "TARGET_SELECT"
                         else:
                             hit_tile = screen_to_map(mx, my, origin_x, origin_y, MAP_DATA, rotation, map_zoom)
                             if hit_tile is not None:
@@ -3235,10 +3446,14 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                     rotation = (rotation + 1) % 4
                     combat_log = "Rotated map right."
                 elif event.key == pygame.K_z:
-                    map_zoom = min(2.0, map_zoom + 0.1)
+                    new_zoom = min(MAP_ZOOM_MAX, map_zoom + MAP_ZOOM_STEP)
+                    origin_x, origin_y = zoom_about(origin_x, origin_y, map_zoom, new_zoom, MAP_SCREEN_CENTRE)
+                    map_zoom = new_zoom
                     combat_log = f"Zoom: {map_zoom:.1f}x"
                 elif event.key == pygame.K_x:
-                    map_zoom = max(0.5, map_zoom - 0.1)
+                    new_zoom = max(MAP_ZOOM_MIN, map_zoom - MAP_ZOOM_STEP)
+                    origin_x, origin_y = zoom_about(origin_x, origin_y, map_zoom, new_zoom, MAP_SCREEN_CENTRE)
+                    map_zoom = new_zoom
                     combat_log = f"Zoom: {map_zoom:.1f}x"
                 elif event.key == pygame.K_PAGEUP:
                     stats_scroll = max(0, stats_scroll - 1)
@@ -3255,8 +3470,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                 elif game_state not in ("TICKING", "MOVE_SELECT", "TARGET_SELECT"):
                     # Handle menu and grid keyboard controls (kept simple here)
                     if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"]:
-                        if event.key == pygame.K_UP:    menu_index = (menu_index - 1) % len(current_menu)
-                        elif event.key == pygame.K_DOWN:  menu_index = (menu_index + 1) % len(current_menu)
+                        if event.key in (pygame.K_UP, pygame.K_LEFT):    menu_index = (menu_index - 1) % len(current_menu)
+                        elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):  menu_index = (menu_index + 1) % len(current_menu)
                         elif event.key == pygame.K_ESCAPE:
                             if game_state == "SUBMENU_ACT":
                                 current_menu = main_menu
@@ -3576,9 +3791,12 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                 if actual_idx < len(living_queue):
                     u = living_queue[actual_idx]
                     col = (100, 180, 255) if u.team == "Player" else (255, 110, 110)
-                    row_text = f"{u.name:9} Lv{u.level:<2} Faith:{round(u.faith):3} MP:{u.mp:2} CT:{u.ct}"
-                    if u == active_unit: row_text += " *"
-                    screen.blit(font.render(row_text, True, col), (20, 45 + (display_idx * 24)))
+                    row_y = 45 + (display_idx * 24)
+                    head = font.render(f"{u.name:9} Lv{u.level:<2} Faith:{round(u.faith):3}", True, col)
+                    screen.blit(head, (20, row_y))
+                    dots_w = draw_stamina_dots(screen, 26 + head.get_width(), row_y + 6, u.mp, u.max_mp, radius=4, gap=2)
+                    tail = f"CT:{u.ct}" + (" *" if u == active_unit else "")
+                    screen.blit(font.render(tail, True, col), (34 + head.get_width() + dots_w, row_y))
 
             pygame.draw.rect(screen, (30, 30, 40), rotate_left_button)
             pygame.draw.rect(screen, (30, 30, 40), rotate_right_button)
@@ -3626,7 +3844,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
         draw_skill_banner(screen, font, SCREEN_WIDTH // 2, 92)
 
         if game_state in ["MENU", "SUBMENU_ACT", "SUBMENU_ITEM"] and active_unit:
-            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, team_inventory, ui_frame, menu_anchor)
+            draw_action_menu(screen, font, active_unit, current_menu, menu_index, units, team_inventory, ui_frame, menu_anchor,
+                             submenu=game_state in SUBMENU_STATES)
 
         if game_state == "GAME_OVER":
             is_victory = winner == "Player" or ending is not None
@@ -3690,7 +3909,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
     # map's persistent roster - equipment doesn't need this since it never
     # changes mid-battle.
     victory = game_state == "GAME_OVER" and (get_winner(units) == "Player" or ending is not None)
-    return {"victory": victory, "units": {
+    # What's left in the satchel, so the world map can keep unused gifts.
+    return {"victory": victory, "satchel": dict(team_inventory.get("Player", {})), "units": {
         unit.name: {
             "books": dict(unit.books),
             "turns": dict(unit.book_turns),

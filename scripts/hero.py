@@ -82,6 +82,7 @@ def load_classes_from_csv(filepath=None):
         for row in csv.DictReader(f):
             row = dict(row)
             row["skills"] = row["skills"].split("|")
+            row["mp"] = row.pop("stamina", row.get("mp"))  # Stamina points
             for key in numeric:
                 row[key] = int(row[key])
             classes[row["type"]] = row

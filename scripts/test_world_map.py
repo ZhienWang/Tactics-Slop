@@ -82,3 +82,31 @@ def test_slot_category_maps_both_ring_slots_to_the_shared_ring_pool():
     assert world_map.SLOT_CATEGORY["ring_1"] == "ring"
     assert world_map.SLOT_CATEGORY["ring_2"] == "ring"
     assert world_map.SLOT_CATEGORY["helmet"] == "helmet"
+
+
+# --- The grid map (Super Mario Bros. 3 style) and its rooms ---
+
+def test_every_node_sits_on_its_own_grid_square_and_roads_run_straight():
+    from scripts.data_editor import load_world_map_nodes
+    nodes, start = load_world_map_nodes()
+    squares = [node["grid"] for node in nodes.values()]
+    assert len(squares) == len(set(squares)), "two nodes share a square"
+    for node_id, node in nodes.items():
+        for other in node["connections"]:
+            (c1, r1), (c2, r2) = node["grid"], nodes[other]["grid"]
+            assert c1 == c2 or r1 == r2, f"road {node_id}-{other} isn't straight"
+
+
+def test_every_library_and_party_room_has_a_reward():
+    from scripts.data_editor import load_world_map_nodes, load_world_map_rooms
+    nodes, _ = load_world_map_nodes()
+    rooms = load_world_map_rooms()
+    room_nodes = [n for n, node in nodes.items() if node["type"] in world_map.ROOM_TYPES]
+    assert any(nodes[n]["type"] == "library" for n in room_nodes)
+    assert any(nodes[n]["type"] == "party" for n in room_nodes)
+    for node_id in room_nodes:
+        room = rooms[node_id]
+        if nodes[node_id]["type"] == "library":
+            assert room["book_turns"] > 0, node_id
+        else:
+            assert room["exp"] > 0 and room["items"], node_id

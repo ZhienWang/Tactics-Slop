@@ -65,6 +65,8 @@ def human_like_score(game_score):
                 return 88
             if kind == "Faith":
                 return 85
+        if skill_name == "Heal Blind":
+            return 90 if g.is_blind(target) else None
         if kind == "Heal":
             if target is unit or target.faith >= g.FAITH_CAP * 0.5:
                 return None

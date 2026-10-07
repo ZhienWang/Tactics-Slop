@@ -12,7 +12,7 @@ from scripts.data_editor import (
 )
 from scripts.effects import PATTERNS, SHAPES, EffectManager, EffectSpec
 
-EFFECT_EVENTS_KNOWN = {"@morale", "@rekindle", "@lead_fade", "@despair_turn", "@stunned", "@snared", "@level_up", "@disarmed", "@turned_back", "@fled", "@escaped", "@heavenly_light", "@arrested"}
+EFFECT_EVENTS_KNOWN = {"@morale", "@rekindle", "@lead_fade", "@despair_turn", "@stunned", "@snared", "@level_up", "@disarmed", "@turned_back", "@fled", "@escaped", "@heavenly_light", "@arrested", "@blind"}
 
 
 @pytest.fixture(scope="module")

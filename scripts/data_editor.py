@@ -14,7 +14,7 @@ MAP_CSV_DUMMY = """0,0,1,1,0,0
 0,1,2,1,0,0
 0,0,1,0,0,0"""
 
-SKILLS_CSV_DUMMY = """skill_name,mp_cost,range,damage,type,r,g,b
+SKILLS_CSV_DUMMY = """skill_name,stamina_cost,range,damage,type,r,g,b
 Attack,0,1,30,Physical,200,50,50
 Shoot,0,3,40,Physical,200,180,50
 Fire,10,3,50,Magic,255,100,50
@@ -233,7 +233,9 @@ def load_skills_from_csv(filepath=None):
         reader = csv.DictReader(f)
         for row in reader:
             skills_registry[row["skill_name"]] = {
-                "mp_cost": int(row["mp_cost"]),
+                # Stamina points the skill spends (the internal key is still
+                # mp_cost); older files used an mp_cost column.
+                "mp_cost": int(row.get("stamina_cost", row.get("mp_cost")) or 0),
                 "range": int(row["range"]),
                 "damage": int(row["damage"]),
                 "type": row["type"],
@@ -623,28 +625,74 @@ def load_stage_manifest(filepath=None):
     return stages
 
 
+# The world map is a grid of square spaces, Super Mario Bros. 3 style: each
+# node sits on a (col, row) square, WORLD_MAP_CELL pixels a side, and the
+# whole grid is centred in the area above the hint bar.
+WORLD_MAP_CELL = 86
+WORLD_MAP_AREA = (0, 60, 1600, 800)  # x, y, width, height
+
+
+def world_grid_to_screen(col, row, cols, rows):
+    """Centre of a grid square on screen, for a grid cols x rows big."""
+    ax, ay, aw, ah = WORLD_MAP_AREA
+    left = ax + (aw - cols * WORLD_MAP_CELL) / 2
+    top = ay + (ah - rows * WORLD_MAP_CELL) / 2
+    return round(left + (col + 0.5) * WORLD_MAP_CELL), round(top + (row + 0.5) * WORLD_MAP_CELL)
+
+
 def load_world_map_nodes(filepath=None):
-    """Parses the world map's node layout (screen position, type, and which
-    other nodes it connects to). Returns (nodes, start_node_id)."""
+    """Parses the world map's node layout (grid square, type, and which other
+    nodes it connects to). Returns (nodes, start_node_id). Each node has its
+    "grid" (col, row) and the screen "pos" of that square's centre; an older
+    layout with pixel x/y columns still loads, with "pos" only."""
     filepath = filepath or os.path.join(DATA_DIR, "world_map_nodes.csv")
     nodes = {}
     start_node_id = None
-    with open(filepath, "r", newline="") as f:
+    with open(filepath, "r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             node_id = row["node_id"].strip()
             connections = [c.strip() for c in row["connections"].split("|") if c.strip()]
-            nodes[node_id] = {
-                "pos": (int(row["x"]), int(row["y"])),
-                "name": row["name"].strip(),
-                "type": row["type"].strip(),
-                "connections": connections,
-            }
+            node = {"name": row["name"].strip(), "type": row["type"].strip(), "connections": connections}
+            if row.get("col") not in (None, ""):
+                node["grid"] = (int(row["col"]), int(row["row"]))
+            else:
+                node["pos"] = (int(row["x"]), int(row["y"]))
+            nodes[node_id] = node
             if row.get("start", "").strip() == "1":
                 start_node_id = node_id
+    grids = [n["grid"] for n in nodes.values() if "grid" in n]
+    if grids:
+        cols, rows = max(g[0] for g in grids) + 1, max(g[1] for g in grids) + 1
+        for node in nodes.values():
+            if "grid" in node:
+                node["pos"] = world_grid_to_screen(*node["grid"], cols, rows)
     if start_node_id is None and nodes:
         start_node_id = next(iter(nodes))
     return nodes, start_node_id
+
+
+def load_world_map_rooms(filepath=None):
+    """The library and party rooms' rewards (world_map_rooms.csv):
+    {node_id: {"book_turns", "exp", "items": {name: count}, "text"}}."""
+    filepath = filepath or os.path.join(DATA_DIR, "world_map_rooms.csv")
+    if not os.path.exists(filepath):
+        return {}
+    rooms = {}
+    with open(filepath, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            items = {}
+            for part in (row.get("items") or "").split("|"):
+                if part.strip():
+                    name, _, count = part.partition(":")
+                    items[name.strip()] = int(count or 1)
+            rooms[row["node_id"].strip()] = {
+                "book_turns": int(row.get("book_turns") or 0),
+                "exp": int(row.get("exp") or 0),
+                "items": items,
+                "text": (row.get("text") or "").strip(),
+            }
+    return rooms
 
 
 def load_escape_tiles_from_csv(filepath):
@@ -673,7 +721,9 @@ def load_characters_from_csv(filepath=None):
                 "speed": int(row["speed"]),
                 "mv": int(row["mv"]),
                 "jump": int(row["jump"]),
-                "mp": int(row["mp"]),
+                # Stamina points (the internal key is still mp); older files
+                # used an mp column.
+                "mp": int(row.get("stamina", row.get("mp")) or 0),
                 # Split the pipe-delimited string back into a real Python list
                 "skills": row["skills"].split("|") if row["skills"] else [],
                 "color": (int(row["r"]), int(row["g"]), int(row["b"])),

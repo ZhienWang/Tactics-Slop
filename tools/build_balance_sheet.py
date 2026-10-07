@@ -101,6 +101,8 @@ def constants_rows():
     add("Status", "SHOVE_CHANCE", g.SHOVE_CHANCE, PCT, "Shove's base chance to stun and push (before resist).")
     add("Status", "SHOVE_DISTANCE", g.SHOVE_DISTANCE, "0", "Tiles a Shove pushes (Sergeants: 3).")
     add("Status", "FISH_NET_SNARE_TURNS", 2, "0", "Turns a Fish net snares its target.", f"{gl}: _resolve_skill_status (hard-coded 2)")
+    add("Status", "BLIND_TURNS", g.BLIND_TURNS, "0", "Turns Blind lasts on its target.")
+    add("Status", "BLIND_HIT_MULTIPLIER", g.BLIND_HIT_MULTIPLIER, "0.00", "A blinded unit's Preach and Physical hit chances are multiplied by this.")
     add("Status", "COMMAND_CT_BOOST", g.COMMAND_CT_BOOST, "0", "CT Command adds to an ally (100 CT = a turn).")
     add("Support", "LEAD_LOVE_BONUS", g.LEAD_LOVE_BONUS, "0", "Love Lead gives every ally within range.")
     add("Support", "LEAD_RADIUS", g.LEAD_RADIUS, "0", "Tiles Lead reaches.")
@@ -159,9 +161,9 @@ def build_growth(wb):
     level = put(ws, 1, 2, 10, INPUT, "0")
     level.fill = EDIT_FILL
     level.comment = Comment("Type any level. The 'gained by level' columns show what a Lv 1 unit of each class has gained by then.", "Balance sheet")
-    header(ws, 3, ["Class", "Max MP / level", "Speech / level", "Resist / level", "MP gained by level", "Speech gained by level", "Resist gained by level", "Speed gained by level"],
+    header(ws, 3, ["Class", "Stamina / level", "Speech / level", "Resist / level", "Stamina gained by level", "Speech gained by level", "Resist gained by level", "Speed gained by level"],
            [16, 14, 14, 14, 16, 18, 18, 18])
-    classes = list(g.LEVEL_GROWTH.items()) + [("(any other class)", g.DEFAULT_LEVEL_GROWTH)]
+    classes = list(g.LEVEL_GROWTH.items()) + [("(any other class)", g.DEFAULT_LEVEL_GROWTH)]  # max_mp = Stamina (no growth)
     speed_every = "Constants!$C$" + str(_constant_row("SPEED_GROWTH_EVERY"))
     for row, (name, growth) in enumerate(classes, start=4):
         put(ws, row, 1, name, BOLD)
@@ -186,7 +188,7 @@ def _constant_row(name):
 # --- Units -----------------------------------------------------------------------
 
 UNIT_COLUMNS = ["Key (stage - name)", "Stage", "Name", "Team", "Class", "Level", "Mount", "Skills",
-                "Speed", "Move", "Jump", "MP", "Speech (magic_attack)", "Resist (magic_defense)", "Faith", "Bravery", "Patience", "Love",
+                "Speed", "Move", "Jump", "Stamina", "Speech (magic_attack)", "Resist (magic_defense)", "Faith", "Bravery", "Patience", "Love",
                 "Eff. Speech at level", "Eff. Resist at level", "Eff. Speed at level", "Eff. Move (incl. mount)",
                 "Preach strength (faith per hit)", "Preach hit %", "Expected faith / preach", "Physical hit % against them (flat)",
                 "Status resist %", "Morale surge % / turn", "Ticks per turn", "Flee % / turn at half force lost", "Persecutes to arrest"]
@@ -252,7 +254,7 @@ def build_units(wb, ref, growth):
 
 def build_classes(wb, ref):
     ws = wb.create_sheet("Classes")
-    labels = ["Type", "Class", "Role", "Signature skill", "Skills", "Speed", "Move", "Jump", "MP", "Speech", "Resist", "Faith",
+    labels = ["Type", "Class", "Role", "Signature skill", "Skills", "Speed", "Move", "Jump", "Stamina", "Speech", "Resist", "Faith",
               "Bravery", "Patience", "Love", "Preach strength", "Preach hit %", "Expected faith / preach",
               "Physical hit % against them", "Status resist %", "Morale surge % / turn", "Ticks per turn"]
     header(ws, 1, labels, [7, 13, 10, 17, 34, 8, 8, 9, 11, 8, 8, 7, 8, 9, 7, 11, 10, 12, 13, 10, 11, 9])
@@ -291,7 +293,8 @@ SKILL_NOTES = {
     "Preach": ("Faith", "Party on enemy: raises their faith by Preach strength; at {FAITH_CAP} they convert. Enemy on party: lowers it. Misses on a Love roll."),
     "Shoot": ("Physical", "Strikes the target down (removed). Archers ignore the uphill penalty. A guard blocks it."),
     "First Aid": ("Heal", "Raises an ally's faith by the user's Preach strength. Always lands."),
-    "Heal": ("Heal", "Raises an ally's faith by the user's Preach strength. Always lands."),
+    "Heal Blind": ("Support", "Cures an ally's Blind (no faith change). Can target yourself."),
+    "Blind": ("Status", "Blinds the target for {BLIND_TURNS} turns: their Preach and Physical attacks land x{BLIND_HIT_MULTIPLIER} as often. Patience resists."),
     "Lead": ("Support", "+{LEAD_LOVE_BONUS} Love to allies within {LEAD_RADIUS} tiles for {LEAD_TURNS} turns."),
     "Defend": ("Support", "Guards an ally: blocks the next Physical hit."),
     "Slash": ("Physical", "Disarms the target for {DISARM_TURNS} turns (can't act)."),
@@ -321,7 +324,7 @@ SKILL_NOTES = {
 
 def build_skills(wb, ref, units_last, classes_last):
     ws = wb.create_sheet("Skills")
-    header(ws, 1, ["Skill", "Type", "MP cost", "Range", "What it does (live numbers)", "Units carrying it", "Classes carrying it"], [17, 10, 9, 8, 95, 13, 13])
+    header(ws, 1, ["Skill", "Type", "Stamina cost", "Range", "What it does (live numbers)", "Units carrying it", "Classes carrying it"], [17, 10, 9, 8, 95, 13, 13])
     skills = load_skills_from_csv()
     for row, (name, data) in enumerate(skills.items(), start=2):
         put(ws, row, 1, name, BOLD)

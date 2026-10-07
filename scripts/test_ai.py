@@ -1,4 +1,5 @@
 import glob
+import glob
 import os
 import random
 
@@ -1589,3 +1590,77 @@ def test_the_damascus_party_persecutes_instead_of_preaching():
     other = make_unit("Peter", "Player", 0, 0, 100, 0, ["Preach"])
     game_logic.apply_stage_skill_swaps("jerusalem", [other])
     assert other.skills == ["Preach"]
+
+
+# --- Blind and Heal Blind ---
+
+def test_blind_halves_preach_and_physical_hit_chances_for_three_turns(monkeypatch):
+    game_logic.MAP_DATA = [[0] * 4 for _ in range(4)]
+    legionnaire = make_unit("Legionnaire Archer 1", "Enemy", 0, 0, 100, 0, ["Blind"], char_class="Archer")
+    peter = make_unit("Peter", "Player", 0, 1, 120, 0, [])
+    target = make_unit("Target", "Enemy", 0, 2, 100, 0, [])
+    target.magic_defense = 0
+    preach, physical = game_logic.faith_hit_chance(peter), game_logic.physical_hit_chance(peter, target)
+    monkeypatch.setattr(game_logic.random, "random", lambda: 0.999)  # not resisted
+    assert game_logic.apply_skill_status("Blind", legionnaire, peter, [legionnaire, peter])
+    assert game_logic.faith_hit_chance(peter) == pytest.approx(preach * game_logic.BLIND_HIT_MULTIPLIER)
+    assert game_logic.physical_hit_chance(peter, target) == pytest.approx(physical * game_logic.BLIND_HIT_MULTIPLIER)
+    for _ in range(game_logic.BLIND_TURNS):
+        game_logic.begin_turn(peter)
+        assert game_logic.is_blind(peter)  # blind for each of its next three turns
+    game_logic.begin_turn(peter)
+    assert not game_logic.is_blind(peter)
+
+
+def test_heal_blind_and_the_salve_cure_blind():
+    john = make_unit("John", "Player", 0, 0, 120, 20, ["Heal Blind"])
+    peter = make_unit("Peter", "Player", 0, 1, 120, 0, [])
+    peter.blind_turns = game_logic.BLIND_TURNS
+    faith = peter.faith
+    assert game_logic.apply_skill_status("Heal Blind", john, peter, [john, peter])
+    assert not game_logic.is_blind(peter) and peter.faith == faith  # only cures - no faith change
+    assert not game_logic.apply_skill_status("Heal Blind", john, peter, [john, peter])  # nothing to cure
+    peter.blind_turns = 2
+    game_logic.ITEM_REGISTRY = {"Healing Salve": {"effect": "cure_status", "amount": 0, "target_scope": "ally", "range": 1, "uses": 1, "color": (0, 0, 0)}}
+    game_logic.apply_item_effect("Healing Salve", john, peter, [john, peter])
+    assert not game_logic.is_blind(peter)
+
+
+def test_about_a_fifth_of_legionnaires_carry_blind_and_heal_is_now_heal_blind():
+    root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    skills = load_skills_from_csv(os.path.join(root, "skills.csv"))
+    assert "Heal" not in skills and skills["Heal Blind"]["type"] == "Support" and skills["Blind"]["type"] == "Status"
+    for path in [os.path.join(root, "characters.csv")] + glob.glob(os.path.join(root, "stages", "*", "characters.csv")):
+        roster = load_characters_from_csv(path)
+        assert not any("Heal" in c["skills"] for c in roster), path
+        legion = [c for c in roster if c["name"].startswith("Legionnaire")]
+        if legion:
+            blinders = [c for c in legion if "Blind" in c["skills"]]
+            assert len(blinders) == max(1, round(len(legion) * 0.2)), path
+
+
+# --- Stamina (replaces MP) ---
+
+def test_stamina_is_a_few_points_and_skills_cost_none_or_one():
+    root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    for name, skill in load_skills_from_csv(os.path.join(root, "skills.csv")).items():
+        assert skill["mp_cost"] in (0, 1), name
+    for path in [os.path.join(root, "characters.csv")] + glob.glob(os.path.join(root, "stages", "*", "characters.csv")):
+        for c in load_characters_from_csv(path):
+            assert 2 <= c["mp"] <= 5, (path, c["name"], c["mp"])
+
+
+def test_stamina_comes_back_one_point_a_turn_up_to_the_maximum():
+    paul = make_unit("Paul", "Player", 0, 0, 200, 3, ["Lead"])
+    paul.mp = 0
+    game_logic.begin_turn(paul)
+    assert paul.mp == game_logic.STAMINA_REGEN == 1
+    for _ in range(5):
+        game_logic.begin_turn(paul)
+    assert paul.mp == paul.max_mp == 3
+
+
+def test_stamina_does_not_grow_with_level():
+    apostle = make_unit("Peter", "Player", 0, 0, 100, 3, [])
+    game_logic.grow_one_level(apostle, 2)
+    assert apostle.max_mp == 3
