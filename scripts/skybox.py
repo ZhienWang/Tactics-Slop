@@ -11,6 +11,8 @@ import math
 import random
 
 import pygame
+from scripts.art_style import ROOT
+import os
 
 # Per weather type: sky colour at the top of the screen, at the horizon, the
 # haze below the horizon (under the map), the two hill ridges (far, near),
@@ -73,6 +75,18 @@ class Skybox:
         self.view = None
         self.last_ticks = None
         self.sun_pos = None
+        self.painted_background = None
+        art_path = os.path.join(ROOT, "assets", "anime", "moonlit_landscape.png")
+        if os.path.isfile(art_path):
+            art = pygame.image.load(art_path)
+            # Cover the viewport without stretching the painted scenery.
+            scale = max(width / art.get_width(), height / art.get_height())
+            art = pygame.transform.smoothscale(art, (round(art.get_width() * scale), round(art.get_height() * scale)))
+            self.painted_background = pygame.Surface((width, height))
+            self.painted_background.blit(art, art.get_rect(center=(width // 2, height // 2)))
+            if kind in ("rain", "heavy_rain", "storm"):
+                tint = {"rain": (155, 170, 195), "heavy_rain": (110, 125, 155), "storm": (80, 90, 125)}[kind]
+                self.painted_background.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
 
     # --- building ---
 
@@ -161,6 +175,10 @@ class Skybox:
             surface.blit(layer, (x + self.pano_width, y))
 
     def draw(self, surface, rotation, pan_x, pan_y):
+        if self.painted_background is not None:
+            surface.blit(self.painted_background, (0, 0))
+            self.sun_pos = None
+            return
         now = pygame.time.get_ticks()
         dt = 0.0 if self.last_ticks is None else min(0.1, (now - self.last_ticks) / 1000)
         self.last_ticks = now

@@ -28,7 +28,7 @@ DIM = (190, 180, 160)
 GOLD = (255, 215, 110)
 BUTTON = (58, 44, 32)
 BUTTON_HOVER = (96, 72, 46)
-PAUL_TOKEN = "assets/paul.png"
+PAUL_TOKEN = "assets/anime/units/paul.png"
 PAUL_INTRO = ("Before we set out together, friend, let me know you a little. Answer as you truly are, "
               "not as you wish you were - there are no wrong answers, and every kind of servant has a place in this work.")
 

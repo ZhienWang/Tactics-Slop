@@ -63,6 +63,13 @@ def stage():
 
 
 def build(serve=False):
+    # Reuse the downloaded template and icon when staging a fresh build.
+    cached = os.path.join(ROOT, "build", "web-cache")
+    if os.path.isdir(cached):
+        shutil.copytree(cached, os.path.join(STAGE, "build", "web-cache"), dirs_exist_ok=True)
+        version_file = os.path.join(ROOT, "build", "version.txt")
+        if os.path.isfile(version_file):
+            shutil.copy2(version_file, os.path.join(STAGE, "build", "version.txt"))
     args = [sys.executable, "-m", "pygbag", "--title", "Road to Jerusalem"]
     if not serve:
         args.append("--build")

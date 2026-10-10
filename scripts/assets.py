@@ -4,6 +4,7 @@ import sys
 import random
 import pygame
 from scripts.config import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT
+from scripts.art_style import character_art_path, fit_art
 
 
 # Papyrus itself is a proprietary font, so it can't be bundled with the
@@ -385,9 +386,10 @@ def cache_terrain_colors(terrain_image_cache):
 def build_character_portraits(units, invalid_assets):
     portraits = {}
     for u in units:
-        portrait_img = load_image_safe(u.portrait_path, invalid_assets)
+        anime_path = character_art_path(u.portrait_path)
+        portrait_img = load_image_safe(anime_path or u.portrait_path, invalid_assets)
         if portrait_img:
-            if u.name == "Centurion Marcus":
+            if u.name == "Centurion Marcus" and not anime_path:
                 gold_tint = pygame.Surface(portrait_img.get_size(), pygame.SRCALPHA)
                 gold_tint.fill((255, 190, 40, 255))
                 portrait_img = portrait_img.copy()
@@ -395,7 +397,7 @@ def build_character_portraits(units, invalid_assets):
             # 2:1 like every unit image; kept at twice the 140x70 map slot
             # so the refined unit art (assets/unit_art.py) stays crisp when
             # the map is zoomed in.
-            portraits[u.name] = pygame.transform.smoothscale(portrait_img, (280, 140))
+            portraits[u.name] = fit_art(portrait_img, (280, 140)) if anime_path else pygame.transform.smoothscale(portrait_img, (280, 140))
         else:
             portraits[u.name] = create_portrait_surface(u.color, u.name)
     return portraits
@@ -505,7 +507,10 @@ def build_character_face_portraits(units, invalid_assets):
     face_portraits = {}
     for u in units:
         # A unit-specific face (e.g. a converted Legionnaire's) comes first.
-        face_img = load_image_safe(u.face_portrait_path) if getattr(u, "face_portrait_path", None) else None
+        anime_face = character_art_path(u.portrait_path, face=True)
+        face_img = load_image_safe(anime_face) if anime_face else None
+        if face_img is None:
+            face_img = load_image_safe(u.face_portrait_path) if getattr(u, "face_portrait_path", None) else None
         face_path = f"{FACE_PORTRAIT_DIR}/{os.path.basename(u.portrait_path)}" if u.portrait_path else None
         if face_img is None and face_path:
             face_img = load_image_safe(face_path)
