@@ -19,9 +19,19 @@ Saved maps are written in two forms:
     yet, so a bridge map can be authored and saved here but isn't playable
     in battle until that support is added separately.
 
-This tool does not touch data/stages.csv or any stage's characters.csv, so
-a brand-new map isn't automatically wired into the campaign/world map -
-that's a separate, deliberate step.
+It also edits what stands on the map, saved beside it in the stage folder:
+  - props.csv - trees, boulders, two-storey stone houses, wells and
+    sheep pens, drawn with the game's own art. Houses placed together in a
+    full square on level ground merge into one bigger house, just as they
+    do in battle.
+  - party_start.csv - the tiles your company starts on, numbered: Paul
+    takes 1, and however many there are is how many the stage deploys.
+  - characters.csv positions - the stage's own cast (the enemy, and any
+    NPC allies). The company itself comes from data/roster.csv.
+
+This tool does not touch data/stages.csv, so a brand-new map isn't
+automatically wired into the campaign/world map - that's a separate,
+deliberate step.
 """
 import copy
 import os
@@ -46,8 +56,13 @@ from scripts.data_editor import (
     update_character_positions_csv,
     normalize_height,
 )
-from scripts.assets import load_image_safe, cache_terrain_colors, bring_window_to_front, get_font
-from scripts.game_logic import iso_to_screen, draw_iso_tile, get_render_order
+from scripts.assets import (load_image_safe, cache_terrain_colors, bring_window_to_front, get_font,
+                            build_tree_sprite, build_boulder_sprite, build_house_sprite, build_well_sprite,
+                            build_ranch_sprite)
+from scripts.data_editor import load_props_from_csv, is_water_tile
+from scripts.game_logic import (iso_to_screen, draw_iso_tile, get_render_order, draw_prop, house_blocks,
+                                plan_house_block, draw_house_block_part)
+from scripts.roster import load_party_slots, save_party_slots
 from scripts.controls import point_in_polygon, tile_corner_offsets, tile_top_points
 
 PALETTE = TERRAIN_TILE_PATHS + [WATER_TILE_PATH]
@@ -71,11 +86,32 @@ ADD_LAYER_GAP = 2
 SLOPE_HEIGHT_STEP = 0.5
 DEFAULT_TERRAIN = "assets/grass.jpg"
 
-TOOLS = ["paint", "add", "remove", "units"]
-TOOL_LABELS = ["Paint", "Add Layer", "Remove", "Units"]
+TOOLS = ["paint", "add", "remove", "units", "props", "party"]
+TOOL_LABELS = ["Paint", "Add Layer", "Remove", "Units", "Props", "Party"]
 UNDO_HISTORY_LIMIT = 50
 UNIT_MARKER_RADIUS = 10
-TEAM_MARKER_COLORS = {"Player": (70, 140, 255), "Enemy": (220, 60, 60)}
+# A stage's own Player-side characters are NPC allies (the company comes
+# from the roster and starts on the party tiles).
+TEAM_MARKER_COLORS = {"Player": (70, 190, 110), "Enemy": (220, 60, 60)}
+PARTY_MARKER_COLOR = (70, 140, 255)
+LEADER_MARKER_COLOR = (240, 190, 40)
+
+# The Props tool's palette: (label, prop, height, style). None = eraser.
+PROP_PALETTE = [
+    ("Tree", "tree", 3, ""),
+    ("Boulder", "boulder", 1, ""),
+    ("House", "house", 3, ""),
+    ("Well", "well", 1.5, ""),
+    ("Sheep pen", "ranch", 2, ""),
+    ("Erase", None, 0, ""),
+]
+
+# Sidebar rows (y) below the terrain palette.
+TOOLS_Y = 286
+CONTEXT_Y = 394
+ACTIONS_Y = 506
+RESIZE_Y = 626
+HISTORY_Y = 682
 
 SIDEBAR_X = SCREEN_WIDTH - 240
 SIDEBAR_WIDTH = 230
@@ -224,6 +260,8 @@ def snapshot_state(state):
         "rows": state["rows"],
         "cols": state["cols"],
         "characters": copy.deepcopy(state["characters"]),
+        "props": copy.deepcopy(state["props"]),
+        "party_slots": list(state["party_slots"]),
     }
 
 
@@ -232,6 +270,8 @@ def restore_snapshot(state, snap):
     state["rows"] = snap["rows"]
     state["cols"] = snap["cols"]
     state["characters"] = snap["characters"]
+    state["props"] = snap["props"]
+    state["party_slots"] = snap["party_slots"]
     state["selected_character"] = None
 
 
@@ -313,6 +353,9 @@ def save_tiles(state, stage_name):
     flat = flatten_tiles(state["tiles"])
     save_map_layers_csv(os.path.join(target_dir, "map_layers.csv"), flat)
 
+    save_props_csv(os.path.join(target_dir, "props.csv"), state["props"])
+    save_party_slots(target_dir, state["party_slots"])
+
     characters_note = ""
     if state["characters"] and state["characters_source_stage"] == stage_name:
         positions = {c["name"]: (c["x"], c["y"]) for c in state["characters"]}
@@ -329,6 +372,84 @@ def save_tiles(state, stage_name):
     save_map_layout_csv(os.path.join(target_dir, "map_layout.csv"), map_grid)
     save_terrain_layout_csv(os.path.join(target_dir, "terrain_layout.csv"), terrain_grid)
     return f"Saved '{stage_name}' (single-layer - playable in battle right now).{characters_note}"
+
+
+def save_props_csv(path, props):
+    """props.csv in the game's x,y,prop,height,style format, row by row."""
+    def fmt(h):
+        return str(int(h)) if float(h).is_integer() else str(h)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        f.write("x,y,prop,height,style\n")
+        for (x, y), prop in sorted(props.items(), key=lambda item: (item[0][1], item[0][0])):
+            f.write(f"{x},{y},{prop['prop']},{fmt(prop['height'])},{prop.get('style', '')}\n")
+
+
+def place_prop(state, x, y):
+    """The Props tool on a tile: puts the chosen prop there (replacing what
+    was), or erases. Returns a status line if it refused."""
+    label, kind, height, style = PROP_PALETTE[state["prop_brush"]]
+    if kind is None:
+        state["props"].pop((x, y), None)
+        return None
+    column = state["tiles"].get((x, y))
+    if not column:
+        return "Nothing to stand a prop on there."
+    if is_water_tile(column[-1]["terrain"]):
+        return "Props can't stand in the water."
+    if (x, y) in state["party_slots"] or any((c["x"], c["y"]) == (x, y) for c in state["characters"]):
+        return "Someone starts on that tile - move them first."
+    prop = {"x": x, "y": y, "prop": kind, "height": height}
+    if style:
+        prop["style"] = style
+    state["props"][(x, y)] = prop
+    return None
+
+
+def toggle_party_slot(state, x, y):
+    """The Party tool: adds a start tile at the end of the line-up, or takes
+    one away. Returns a status line."""
+    if (x, y) in state["party_slots"]:
+        state["party_slots"].remove((x, y))
+        return f"Party start tiles: {len(state['party_slots'])}."
+    if (x, y) in state["props"] or any((c["x"], c["y"]) == (x, y) for c in state["characters"]):
+        return "That tile is taken."
+    column = state["tiles"].get((x, y))
+    if not column or is_water_tile(column[-1]["terrain"]):
+        return "The party has to start on dry ground."
+    state["party_slots"].append((x, y))
+    return f"Party start tiles: {len(state['party_slots'])} (tile 1 is Paul's)."
+
+
+_prop_icons = {}
+
+
+def prop_icon(index, size):
+    """A palette swatch's picture of the prop, drawn with the game's art."""
+    key = (index, size)
+    if key not in _prop_icons:
+        label, kind, height, style = PROP_PALETTE[index]
+        icon = pygame.Surface((size, size), pygame.SRCALPHA)
+        art = {
+            "tree": lambda: build_tree_sprite(round(size * 0.6), size - 4, seed=3),
+            "boulder": lambda: build_boulder_sprite(round(size * 0.8), round(size * 0.5), seed=3),
+            "house": lambda: build_house_sprite(round(size * 0.8), round(size * 0.85), seed=3, roof=style),
+            "well": lambda: build_well_sprite(round(size * 0.6), round(size * 0.75), seed=3),
+            "ranch": lambda: build_ranch_sprite(round(size * 0.9), round(size * 0.6), seed=3),
+        }.get(kind)
+        if art:
+            sprite = art()
+            icon.blit(sprite, sprite.get_rect(midbottom=(size // 2, size - 2)))
+        else:
+            pygame.draw.line(icon, (220, 80, 80), (10, 10), (size - 10, size - 10), 4)
+            pygame.draw.line(icon, (220, 80, 80), (size - 10, 10), (10, size - 10), 4)
+        _prop_icons[key] = icon
+    return _prop_icons[key]
+
+
+def prop_palette_layout():
+    swatch, gap = 50, 6
+    return [pygame.Rect(SIDEBAR_X + (i % 4) * (swatch + gap), CONTEXT_Y + (i // 4) * (swatch + gap), swatch, swatch)
+            for i in range(len(PROP_PALETTE))]
 
 
 # --- UI layout helpers (mirrors the panel_rect/option_rects pattern used
@@ -353,23 +474,23 @@ def tool_button_layout():
     # width than 4-across would leave it.
     width = (SIDEBAR_WIDTH - 6) // 2
     rects = []
-    for index in range(4):
+    for index in range(len(TOOLS)):
         col, row = index % 2, index // 2
         x = SIDEBAR_X + col * (width + 6)
-        y = 286 + row * 34
+        y = TOOLS_Y + row * 34
         rects.append(pygame.Rect(x, y, width, 28))
     return TOOL_LABELS, rects
 
 
 def height_button_layout():
-    minus = pygame.Rect(SIDEBAR_X, 362, 32, 28)
-    plus = pygame.Rect(SIDEBAR_X + SIDEBAR_WIDTH - 32, 362, 32, 28)
+    minus = pygame.Rect(SIDEBAR_X, CONTEXT_Y, 32, 28)
+    plus = pygame.Rect(SIDEBAR_X + SIDEBAR_WIDTH - 32, CONTEXT_Y, 32, 28)
     return minus, plus
 
 
 def action_button_layout():
     labels = ["New Map", "Load Stage", "Save"]
-    rects = [pygame.Rect(SIDEBAR_X, 410 + i * 34, SIDEBAR_WIDTH, 28) for i in range(len(labels))]
+    rects = [pygame.Rect(SIDEBAR_X, ACTIONS_Y + i * 34, SIDEBAR_WIDTH, 28) for i in range(len(labels))]
     return labels, rects
 
 
@@ -379,14 +500,14 @@ def resize_button_layout():
     rects = []
     for index in range(4):
         x = SIDEBAR_X + index * (width + 6)
-        rects.append(pygame.Rect(x, 528, width, 26))
+        rects.append(pygame.Rect(x, RESIZE_Y, width, 26))
     return labels, rects
 
 
 def history_button_layout():
     width = (SIDEBAR_WIDTH - 6) // 2
-    undo_rect = pygame.Rect(SIDEBAR_X, 582, width, 28)
-    redo_rect = pygame.Rect(SIDEBAR_X + width + 6, 582, width, 28)
+    undo_rect = pygame.Rect(SIDEBAR_X, HISTORY_Y, width, 28)
+    redo_rect = pygame.Rect(SIDEBAR_X + width + 6, HISTORY_Y, width, 28)
     return undo_rect, redo_rect
 
 
@@ -448,11 +569,24 @@ def draw_sidebar(surface, font, title_font, terrain_image_cache, sidebar_bg, sta
     if state["tool"] == "units":
         selected = state["selected_character"]
         units_text = f"Selected: {selected['name']}" if selected else "Click a unit, then a tile to move it."
-        surface.blit(font.render(units_text, True, TEXT_MAIN), (SIDEBAR_X, 368))
+        surface.blit(font.render(units_text, True, TEXT_MAIN), (SIDEBAR_X, CONTEXT_Y + 6))
+        surface.blit(font.render("Red: enemy   Green: NPC ally", True, TEXT_DIM), (SIDEBAR_X, CONTEXT_Y + 30))
+    elif state["tool"] == "props":
+        for index, rect in enumerate(prop_palette_layout()):
+            chosen = index == state["prop_brush"]
+            pygame.draw.rect(surface, (40, 60, 90) if chosen else (30, 30, 42), rect, border_radius=PANEL_RADIUS)
+            surface.blit(prop_icon(index, rect.width), rect)
+            pygame.draw.rect(surface, PANEL_BORDER if chosen else (70, 70, 80), rect, 3 if chosen else 1, border_radius=PANEL_RADIUS)
+        surface.blit(font.render(PROP_PALETTE[state["prop_brush"]][0], True, TEXT_MAIN), (SIDEBAR_X, CONTEXT_Y + 114))
+    elif state["tool"] == "party":
+        lines = [f"Start tiles: {len(state['party_slots'])} (= party size)",
+                 "Click a tile to add one;", "click a numbered tile to remove it.", "Tile 1 is Paul's."]
+        for i, line in enumerate(lines):
+            surface.blit(font.render(line, True, TEXT_MAIN if i == 0 else TEXT_DIM), (SIDEBAR_X, CONTEXT_Y + 6 + i * 22))
     else:
         hovered_height = topmost(state["tiles"], *state["hovered"]) if state["hovered"] else None
         height_text = f"Height: {hovered_height}" if hovered_height is not None else "Height: -"
-        surface.blit(font.render(height_text, True, TEXT_MAIN), (SIDEBAR_X + 40, 368))
+        surface.blit(font.render(height_text, True, TEXT_MAIN), (SIDEBAR_X + 40, CONTEXT_Y + 6))
         minus_rect, plus_rect = height_button_layout()
         for rect, label in [(minus_rect, "-"), (plus_rect, "+")]:
             draw_button(surface, rect, label, font, fill=(30, 30, 42), border=(70, 70, 80), border_width=2)
@@ -461,12 +595,12 @@ def draw_sidebar(surface, font, title_font, terrain_image_cache, sidebar_bg, sta
     for label, rect in zip(labels, rects):
         draw_button(surface, rect, label, font, fill=(30, 30, 42), border=(70, 70, 80))
 
-    surface.blit(font.render("RESIZE", True, TEXT_DIM), (SIDEBAR_X, 510))
+    surface.blit(font.render("RESIZE", True, TEXT_DIM), (SIDEBAR_X, RESIZE_Y - 18))
     labels, rects = resize_button_layout()
     for label, rect in zip(labels, rects):
         draw_button(surface, rect, label, font, fill=(30, 30, 42), border=(70, 70, 80))
 
-    surface.blit(font.render("HISTORY", True, TEXT_DIM), (SIDEBAR_X, 566))
+    surface.blit(font.render("HISTORY", True, TEXT_DIM), (SIDEBAR_X, HISTORY_Y - 18))
     undo_rect, redo_rect = history_button_layout()
     for rect, label, available in [
         (undo_rect, f"Undo ({len(state['undo_stack'])})", bool(state["undo_stack"])),
@@ -516,7 +650,7 @@ def draw_status_bar(surface, font, state):
     pygame.draw.rect(surface, PANEL_BORDER, panel, 1)
     hint = (
         f"Tool: {state['tool']}   Brush: {os.path.basename(state['brush_terrain'])}   "
-        "Click: use tool   Wheel/+-: height (Shift: half step = slope)   Ctrl+Z/Y: undo/redo   WASD pan   Q/E rotate   Z/X zoom   Esc: quit"
+        "Click: use tool   P/B/R/U/O/F: tools   Wheel/+-: height (Shift: half)   Ctrl+Z/Y: undo/redo   WASD pan   Q/E rotate   Z/X zoom"
     )
     surface.blit(font.render(hint, True, TEXT_DIM), (10, panel.y + 4))
     if state["status_message"]:
@@ -581,6 +715,9 @@ def main():
         "characters": [],
         "characters_source_stage": None,
         "selected_character": None,
+        "props": {},
+        "prop_brush": 0,
+        "party_slots": [],
         "undo_stack": [],
         "redo_stack": [],
     }
@@ -618,6 +755,8 @@ def main():
                             state["characters"] = []
                             state["characters_source_stage"] = None
                             state["selected_character"] = None
+                            state["props"] = {}
+                            state["party_slots"] = []
                             state["status_message"] = f"New {new_cols}x{new_rows} map. Unsaved."
                         except (ValueError, IndexError):
                             state["status_message"] = "Couldn't parse 'cols,rows' - try again."
@@ -647,7 +786,11 @@ def main():
                         state["characters"] = []
                     state["characters_source_stage"] = name
                     state["selected_character"] = None
-                    state["status_message"] = f"Loaded '{name}' ({cols}x{rows}) with {len(state['characters'])} unit(s)."
+                    stage_dir = os.path.dirname(stage_manifest[name]["characters"])
+                    state["props"] = {(p["x"], p["y"]): p for p in load_props_from_csv(os.path.join(stage_dir, "props.csv"))}
+                    state["party_slots"] = load_party_slots(stage_dir)
+                    state["status_message"] = (f"Loaded '{name}' ({cols}x{rows}): {len(state['characters'])} unit(s), "
+                                               f"{len(state['props'])} prop(s), {len(state['party_slots'])} party tile(s).")
                     show_stage_picker = False
                 elif not panel_rect.collidepoint(event.pos):
                     show_stage_picker = False
@@ -699,6 +842,12 @@ def main():
                     state["selected_character"] = None
                 elif event.key == pygame.K_u:
                     state["tool"] = "units"
+                elif event.key == pygame.K_o:
+                    state["tool"] = "props"
+                    state["selected_character"] = None
+                elif event.key == pygame.K_f:
+                    state["tool"] = "party"
+                    state["selected_character"] = None
                 elif event.key in (pygame.K_PLUS, pygame.K_EQUALS) and state["hovered"]:
                     push_undo(state)
                     adjust_height(state, *state["hovered"], height_step())
@@ -746,12 +895,17 @@ def main():
                         state["tool"] = TOOLS[tool_hit]
                         state["selected_character"] = None
                         continue
+                    if state["tool"] == "props":
+                        brush_hit = next((i for i, r in enumerate(prop_palette_layout()) if r.collidepoint(event.pos)), None)
+                        if brush_hit is not None:
+                            state["prop_brush"] = brush_hit
+                            continue
                     minus_rect, plus_rect = height_button_layout()
-                    if state["hovered"] and minus_rect.collidepoint(event.pos):
+                    if state["tool"] in ("paint", "add", "remove") and state["hovered"] and minus_rect.collidepoint(event.pos):
                         push_undo(state)
                         adjust_height(state, *state["hovered"], -height_step())
                         continue
-                    if state["hovered"] and plus_rect.collidepoint(event.pos):
+                    if state["tool"] in ("paint", "add", "remove") and state["hovered"] and plus_rect.collidepoint(event.pos):
                         push_undo(state)
                         adjust_height(state, *state["hovered"], height_step())
                         continue
@@ -786,6 +940,8 @@ def main():
                         push_undo(state)
                         state["tiles"] = resize_tiles(state["tiles"], state["rows"], state["cols"], new_rows, new_cols)
                         state["rows"], state["cols"] = new_rows, new_cols
+                        state["props"] = {t: p for t, p in state["props"].items() if t[0] < new_cols and t[1] < new_rows}
+                        state["party_slots"] = [t for t in state["party_slots"] if t[0] < new_cols and t[1] < new_rows]
                         continue
                     undo_rect, redo_rect = history_button_layout()
                     if undo_rect.collidepoint(event.pos):
@@ -806,6 +962,17 @@ def main():
                         if hit is not None:
                             push_undo(state)
                             state["selected_character"]["x"], state["selected_character"]["y"] = hit
+                elif state["tool"] in ("props", "party"):
+                    hit = hit_test(mx, my, origin_x, origin_y, state["tiles"], state["rows"], state["cols"], rotation, zoom)
+                    if hit is not None:
+                        push_undo(state)
+                        if state["tool"] == "props":
+                            refused = place_prop(state, *hit)
+                            if refused:
+                                state["undo_stack"].pop()
+                            state["status_message"] = refused or f"{len(state['props'])} prop(s)."
+                        else:
+                            state["status_message"] = toggle_party_slot(state, *hit)
                 else:
                     hit = hit_test(mx, my, origin_x, origin_y, state["tiles"], state["rows"], state["cols"], rotation, zoom)
                     if hit is not None:
@@ -842,6 +1009,35 @@ def main():
                     screen.blit(label, label.get_rect(center=center))
                     if state["hovered"] == (x, y):
                         pygame.draw.polygon(screen, CURSOR_COLOR, top_points, 3)
+
+        # Props, back to front, the way the battle draws them - houses in a
+        # square merge into one building here too.
+        render_order = get_render_order(state["cols"], state["rows"], rotation)
+        render_rank = {tile: rank for rank, tile in enumerate(render_order)}
+        props = {t: p for t, p in state["props"].items() if t in state["tiles"]}
+        blocks = house_blocks(props, heights)
+        plans = {}
+        for block in {id(b): b for b in blocks.values()}.values():
+            points = {t: iso_to_screen(t[0], t[1], heights[t[1]][t[0]], origin_x, origin_y, rotation, state["cols"], state["rows"], zoom)
+                      for t in block["tiles"]}
+            plans[id(block)] = plan_house_block(block, points, render_rank, zoom)
+        for x, y in render_order:
+            prop = props.get((x, y))
+            if not prop:
+                continue
+            if (x, y) in blocks:
+                draw_house_block_part(screen, plans[id(blocks[(x, y)])], (x, y))
+            else:
+                sx, sy = iso_to_screen(x, y, heights[y][x], origin_x, origin_y, rotation, state["cols"], state["rows"], zoom)
+                draw_prop(screen, sx, sy, prop, zoom)
+
+        for number, (x, y) in enumerate(state["party_slots"], start=1):
+            marker_pos = character_marker_pos({"x": x, "y": y}, state["tiles"], origin_x, origin_y, rotation, state["cols"], state["rows"], zoom)
+            radius = UNIT_MARKER_RADIUS * zoom
+            pygame.draw.circle(screen, (10, 10, 10), marker_pos, radius + 2)
+            pygame.draw.circle(screen, LEADER_MARKER_COLOR if number == 1 else PARTY_MARKER_COLOR, marker_pos, radius)
+            label = font.render(str(number), True, (255, 255, 255))
+            screen.blit(label, label.get_rect(center=marker_pos))
 
         for character in state["characters"]:
             marker_pos = character_marker_pos(character, state["tiles"], origin_x, origin_y, rotation, state["cols"], state["rows"], zoom)

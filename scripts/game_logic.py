@@ -44,6 +44,7 @@ from scripts.config import (
 from scripts.skybox import Skybox
 from scripts import icons
 from scripts.hero import hero_character
+from scripts.roster import load_roster, load_party_slots, choose_party, deploy_party
 from scripts.assets import (
     load_image_safe,
     load_background_image,
@@ -55,6 +56,11 @@ from scripts.assets import (
     build_character_pixel_art,
     build_tree_sprite,
     build_boulder_sprite,
+    build_house_sprite,
+    build_well_sprite,
+    build_ranch_sprite,
+    build_rubble_sprite,
+    house_parapet,
     draw_tile_texture,
     create_projectile_surface,
     bring_window_to_front,
@@ -79,10 +85,18 @@ EQUIPMENT_REGISTRY = {}
 BOOK_REGISTRY = {}
 CHARACTER_ROSTER = []
 TERRAIN_LAYOUT = []
-# Scenery standing on the map (trees and boulders), and the tiles they occupy -
-# a prop owns its whole tile, so nothing can move onto or be shoved into it.
+# Scenery standing on the map (trees, boulders, houses, wells, ranches), and
+# the tiles they occupy - a prop owns its whole tile, so nothing can move
+# onto or be shoved into it until it's knocked down (strike_prop), when it
+# leaves rubble behind and the tile opens up. PROPS_VERSION ticks whenever
+# that happens, so the battle loop knows to redo its lighting.
 MAP_PROPS = []
 PROP_TILES = set()
+RUBBLE_TILES = set()
+PROPS_VERSION = 0
+# How many Physical hits each kind of prop takes to bring down.
+PROP_HP = {"house": 3, "boulder": 3, "well": 2, "tree": 2, "ranch": 1}
+PROP_NAMES = {"house": "house", "boulder": "boulder", "well": "well", "tree": "tree", "ranch": "ranch fence"}
 # Tiles a fleeing unit can escape the battle from (a stage's escape.csv).
 ESCAPE_TILES = set()
 
@@ -527,7 +541,7 @@ def tile_elevation(x, y):
 CLASS_HIT_BONUS = {"Soldier": 0.05, "Sergeant": 0.05}
 CLASS_IGNORES_UPHILL_PENALTY = {"Archer"}
 CLASS_PREACH_MULTIPLIER = {"Missionary": 1.5}
-CLASS_SHOVE_DISTANCE = {"Sergeant": 3}
+CLASS_SHOVE_DISTANCE = {"Sergeant": 3, "Donkey": 2}
 # Legionnaire subclasses: Archers shoot from range (above), Shieldbearers
 # hold the line - they start each battle guarded and are harder to land a
 # Physical hit on - and Medics keep the ranks steady with Rally.
@@ -727,6 +741,7 @@ EVENT_BANNER_NAMES = {
     "@heavenly_light": "A Light from Heaven",
     "@arrested": "Arrested!",
     "@blind": "Blind",
+    "@prop_destroyed": "Destroyed!",
 }
 SKILL_BANNER_MS = 1200
 # With more banners waiting, each is shown for less time so they keep up.
@@ -791,6 +806,45 @@ def queue_effect(trigger, caster, target, outcome="hit", recipients=None, announ
     })
 
 
+def reset_props(props_path=None):
+    """(Re)loads a stage's props - every one standing and at full strength."""
+    global MAP_PROPS, PROP_TILES, RUBBLE_TILES, PROPS_VERSION
+    MAP_PROPS = load_props_from_csv(props_path)
+    for prop in MAP_PROPS:
+        prop["hp"] = prop["max_hp"] = PROP_HP.get(prop["prop"], 2)
+    PROP_TILES = {(prop["x"], prop["y"]) for prop in MAP_PROPS}
+    RUBBLE_TILES = set()
+    PROPS_VERSION += 1
+
+
+def prop_at(x, y):
+    return next((prop for prop in MAP_PROPS if prop["x"] == x and prop["y"] == y), None)
+
+
+def strike_prop(attacker, x, y):
+    """A Physical blow at a prop: always lands, chips off one HP, and at 0
+    the prop collapses into rubble, freeing its tile. Returns the combat log
+    line, or None if there's no prop there."""
+    global PROPS_VERSION
+    prop = prop_at(x, y)
+    if prop is None:
+        return None
+    name = PROP_NAMES.get(prop["prop"], prop["prop"])
+    prop["hp"] = max(0, prop.get("hp", 1) - 1)
+    if prop["hp"] > 0:
+        EFFECT_EVENTS.append({"trigger": "@prop_hit", "outcome": "always", "caster": (attacker.x, attacker.y),
+                              "target": (x, y), "recipients": []})
+        return f"{attacker.name} strikes the {name}. ({prop['hp']} left)"
+    MAP_PROPS.remove(prop)
+    PROP_TILES.discard((x, y))
+    RUBBLE_TILES.add((x, y))
+    PROPS_VERSION += 1
+    announce_skill("@prop_destroyed", attacker)
+    EFFECT_EVENTS.append({"trigger": "@prop_destroyed", "outcome": "always", "caster": (attacker.x, attacker.y),
+                          "target": (x, y), "recipients": []})
+    return f"{attacker.name} brings down the {name}!"
+
+
 def apply_morale_buff(unit):
     """Rolls for this battle's one morale surge; on a hit, boosts Faith,
     Move, Jump and Speed for this turn only (end_morale_buff takes them back
@@ -819,7 +873,7 @@ def end_morale_buff(unit):
 # Slash doesn't kill: it disarms the target, who then can't act (use Acts
 # or items) for their next DISARM_TURNS turns - they can still move. Other
 # Physical skills (Shoot) still strike the target down.
-DISARM_SKILLS = {"Slash", "Sling"}
+DISARM_SKILLS = {"Slash", "Sling", "Kick"}
 DISARM_TURNS = 2
 
 
@@ -1015,6 +1069,17 @@ CONVERTED_COLOR = (70, 140, 255)
 # Art a converted unit switches to, by its regular portrait_path (see
 # assets/converted_art.py). Units not listed keep their own art.
 CONVERTED_PORTRAIT_PATHS = {"assets/legionaire.png": "assets/legionaire_converted.png"}
+
+
+def converted_portrait(path):
+    """A converted unit's token: its own "<token>_converted.png" when there
+    is one (tools/recast_characters.py makes one for every Legionnaire),
+    else the shared converted art above, else its own token unchanged."""
+    if path and path.endswith(".png"):
+        candidate = path[:-4] + "_converted.png"
+        if os.path.exists(candidate):
+            return candidate
+    return CONVERTED_PORTRAIT_PATHS.get(path, path)
 # Converted Legionnaires each get a commoner's face for the HUD, drawn at
 # random from these public-domain paintings (see its CREDITS.txt) - no two
 # alike in a battle while there are faces to spare, and a unit keeps its
@@ -1045,7 +1110,7 @@ def pick_convert_face():
 def convert_unit(unit, team, flash_at):
     unit.team = team
     unit.color = CONVERTED_COLOR
-    unit.portrait_path = CONVERTED_PORTRAIT_PATHS.get(unit.original_portrait_path, unit.original_portrait_path)
+    unit.portrait_path = converted_portrait(unit.original_portrait_path)
     if is_legionnaire(unit):
         if unit.convert_face is None:
             unit.convert_face = pick_convert_face()
@@ -1198,7 +1263,10 @@ PERSECUTE_TURNS = 2
 
 # Skills a stage swaps out for the Player side - every Player unit on it,
 # the hero included: {stage: {skill: replacement}}.
-STAGE_SKILL_SWAPS = {"damascus": {"Preach": "Persecute"}}
+STAGE_SKILL_SWAPS = {"damascus": {"Preach": "Persecute", "Lead": "Fish net"}}
+# The rest of what's particular about the company on a stage: at Damascus,
+# Saul rides out on horseback, utterly sure of himself.
+STAGE_PARTY_RULES = {"damascus": {"mount": "horse", "faith": FAITH_CAP}}
 
 
 def apply_stage_skill_swaps(stage_id, units):
@@ -2263,6 +2331,15 @@ MAP_ZOOM_DEFAULT = 1.95
 MAP_ZOOM_MIN = 0.5
 MAP_ZOOM_MAX = 2.6
 MAP_ZOOM_STEP = 0.1
+# After choosing Move from the menu, clicks (and Space) on the board are
+# ignored this long, so the click that picked Move - or a quick second one -
+# can't land on a blue tile and move the unit somewhere unintended. A drag
+# started by pressing on the unit itself isn't held up.
+MOVE_CONFIRM_DELAY_MS = 500
+
+
+def move_confirm_ready(started_at, now, by_drag=False):
+    return by_drag or now - started_at >= MOVE_CONFIRM_DELAY_MS
 MAP_SCREEN_CENTRE = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)
 
 
@@ -2361,7 +2438,7 @@ SUN_DIRECTION = (1.0, 0.4)
 SUNWARD_NEIGHBORS = ((1, 0, 1.0), (0, 1, 0.45), (1, 1, 0.5))
 TERRAIN_SHADOW_PER_HEIGHT = 0.12
 TERRAIN_SHADOW_MAX = 0.28
-PROP_SHADOW = {"tree": 0.16, "boulder": 0.1}
+PROP_SHADOW = {"tree": 0.16, "boulder": 0.1, "house": 0.2, "well": 0.08, "ranch": 0.04}
 # Colors a dim / bright tile is tinted toward - shadows go cool, sunlight
 # goes warm, the way painted backgrounds usually light a scene.
 SHADOW_TINT = (12, 16, 42)
@@ -2517,6 +2594,24 @@ def play_queued_effects(manager, bindings):
             for tile in tiles:
                 if tile is not None:
                     manager.play(binding["effect"], tile)
+
+
+# The subtitle on a story ending's screen (e.g. A Light from Heaven): half
+# again as big as the rest of the panel's text.
+ENDING_SUBTITLE_SIZE = 33
+
+
+def wrap_text(text, font, width):
+    """Splits text into lines no wider than `width` in `font`."""
+    lines, line = [], ""
+    for word in text.split():
+        trial = f"{line} {word}".strip()
+        if line and font.size(trial)[0] > width:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    return lines + [line] if line else lines
 
 
 def draw_heavenly_light(surface, source, target, elapsed, zoom=1.0):
@@ -2681,13 +2776,18 @@ PROP_ART_SCALE = 1.9
 PROP_ART = {
     "tree": (build_tree_sprite, 0.62, 0.0),
     "boulder": (build_boulder_sprite, 0.72, 0.36),
+    "house": (build_house_sprite, 0.86, 0.43),
+    "well": (build_well_sprite, 0.6, 0.3),
+    "ranch": (build_ranch_sprite, 0.92, 0.46),
 }
+PROP_PIP_COLOR = (236, 196, 92)
+PROP_PIP_EMPTY = (70, 60, 50)
 
 
 _lit_prop_cache = {}
 
 
-def draw_prop(surface, sx, sy, prop, zoom=1.0, light=1.0):
+def draw_prop(surface, sx, sy, prop, zoom=1.0, light=1.0, show_hp=False):
     """Draws a prop standing on the tile whose top corner is at (sx, sy),
     planted at the middle of that tile and its height scaled from the
     prop's own map height, so a taller prop really does stand taller on
@@ -2697,23 +2797,147 @@ def draw_prop(surface, sx, sy, prop, zoom=1.0, light=1.0):
     sprite_width = max(1, round(TILE_WIDTH * zoom * width_fill))
     # Seeded per tile so each prop's outline sits a little differently, and
     # so the same prop looks the same every frame.
-    sprite = build_sprite(sprite_width, sprite_height, seed=prop["x"] * 31 + prop["y"])
-    level = round(min(1.0, light) * 20) / 20
-    if level < 1.0:
-        cache_key = (id(sprite), level)
-        lit = _lit_prop_cache.get(cache_key)
-        if lit is None:
-            lit = sprite.copy()
-            shade = round(255 * level)
-            lit.fill((shade, shade, min(255, shade + 12), 255), special_flags=pygame.BLEND_RGBA_MULT)
-            _lit_prop_cache[cache_key] = lit
-        sprite = lit
+    style = {"roof": prop["style"]} if prop["prop"] == "house" and prop.get("style") else {}
+    sprite = build_sprite(sprite_width, sprite_height, seed=prop["x"] * 31 + prop["y"], **style)
+    sprite = shade_prop_sprite(sprite, light)
     base_x, base_y = sx, sy + TILE_HEIGHT * zoom * (0.5 + sink)
     surface.blit(sprite, (round(base_x - sprite_width / 2), round(base_y - sprite_height)))
+    if show_hp or prop.get("hp", 0) < prop.get("max_hp", 0):
+        draw_prop_hp(surface, base_x, base_y - sprite_height - round(5 * zoom), prop, zoom)
 
 
-async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None, from_map=False, bonus_items=None):
-    """One battle. `from_map` (entered from the world map) puts a World Map
+def shade_prop_sprite(sprite, light):
+    """The sprite darkened to match a tile's light (cached)."""
+    level = round(min(1.0, light) * 20) / 20
+    if level >= 1.0:
+        return sprite
+    cache_key = (id(sprite), level)
+    lit = _lit_prop_cache.get(cache_key)
+    if lit is None:
+        lit = sprite.copy()
+        shade = round(255 * level)
+        lit.fill((shade, shade, min(255, shade + 12), 255), special_flags=pygame.BLEND_RGBA_MULT)
+        _lit_prop_cache[cache_key] = lit
+    return lit
+
+
+# Houses standing together merge into one bigger house: any full square of
+# them (largest first - 4x4, then 3x3, then 2x2) on level ground is drawn
+# as a single building. Each tile is still its
+# own prop with its own HP, so knocking one down splits the rest back up.
+HOUSE_BLOCK_SIZES = (4, 3, 2)
+# Outside the footprint's edge, like a lone house (PROP_ART's 0.86).
+HOUSE_BLOCK_INSET = 0.14
+# Taller walls for a bigger house: +30% per extra tile of width.
+HOUSE_BLOCK_WALL_GROWTH = 0.3
+
+
+def house_blocks(props_by_tile, map_data):
+    """{tile: block} for every house that's part of a merged square, where a
+    block is {"tiles", "size", "style", "height", "seed"}."""
+    blocks = {}
+    houses = sorted((t for t, p in props_by_tile.items() if p["prop"] == "house"), key=lambda t: (t[1], t[0]))
+    for x0, y0 in houses:
+        if (x0, y0) in blocks:
+            continue
+        first = props_by_tile[(x0, y0)]
+        for size in HOUSE_BLOCK_SIZES:
+            tiles = [(x0 + i, y0 + j) for j in range(size) for i in range(size)]
+            if all(t in props_by_tile and props_by_tile[t]["prop"] == "house" and t not in blocks
+                   and map_data[t[1]][t[0]] == map_data[y0][x0] for t in tiles):
+                block = {"tiles": tiles, "size": size, "style": first.get("style", ""),
+                         "height": max(props_by_tile[t]["height"] for t in tiles), "seed": x0 * 31 + y0}
+                for t in tiles:
+                    blocks[t] = block
+                break
+    return blocks
+
+
+def plan_house_block(block, tile_screen, render_rank, zoom=1.0):
+    """How to draw a merged house this frame. `tile_screen` maps each of its
+    tiles to its iso_to_screen point, and `render_rank` to its place in the
+    back-to-front draw order. The sprite is cut into half-tile-wide strips,
+    each handed to the frontmost tile under it, so it's painted in step
+    with the units around it - a unit in front of the house covers it, one
+    behind is covered. Returns {"sprite", "pos", "strips": {tile: [area]},
+    "top", "front"}."""
+    size = block["size"]
+    centres = {t: (sx, sy + TILE_HEIGHT * zoom / 2) for t, (sx, sy) in tile_screen.items()}
+    xs = [c[0] for c in centres.values()]
+    ys = [c[1] for c in centres.values()]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    fill = (size - HOUSE_BLOCK_INSET) / size
+    width = max(1, round(size * TILE_WIDTH * zoom * fill))
+    # Wall height: a lone house's, scaled up a little for each extra bay.
+    single_width = max(1, round(TILE_WIDTH * zoom * PROP_ART["house"][1]))
+    single_height = block["height"] * TILE_RISE * zoom * PROP_ART_SCALE
+    single_wall = single_height - (single_width - 1) / 2 - house_parapet(single_width)
+    wall = max(4.0, single_wall) * (1 + HOUSE_BLOCK_WALL_GROWTH * (size - 1))
+    height = max(1, round((width - 1) / 2 + wall + house_parapet(width)))
+    sprite = build_house_sprite(width, height, seed=block["seed"], bays=size)
+    base_y = cy + size * TILE_HEIGHT * zoom / 2 * fill
+    left, top = round(cx - width / 2), round(base_y - height)
+    half = TILE_WIDTH * zoom / 2
+    strips = {}
+    for strip in range(2 * size):
+        x_lo = cx - size * half + strip * half
+        mid = x_lo + half / 2
+        under = [t for t, (sx, _) in centres.items() if abs(sx - mid) < half]
+        if not under:
+            continue
+        owner = max(under, key=lambda t: render_rank.get(t, 0))
+        area = pygame.Rect(round(x_lo) - left, 0, round(x_lo + half) - round(x_lo), height).clip(sprite.get_rect())
+        if area.width > 0:
+            strips.setdefault(owner, []).append(area)
+    front = max(block["tiles"], key=lambda t: render_rank.get(t, 0))
+    return {"sprite": sprite, "pos": (left, top), "strips": strips, "top": top, "front": front}
+
+
+def draw_house_block_part(surface, plan, tile, light=1.0):
+    """The strips of a merged house that `tile` is responsible for."""
+    sprite = shade_prop_sprite(plan["sprite"], light)
+    left, top = plan["pos"]
+    for area in plan["strips"].get(tile, ()):
+        surface.blit(sprite, (left + area.x, top), area)
+
+
+def draw_prop_hp(surface, cx, top, prop, zoom=1.0):
+    """A row of pips over a prop: how many more hits it can take."""
+    total = prop.get("max_hp", 1)
+    radius, gap = max(3, round(3.5 * zoom)), max(2, round(2 * zoom))
+    width = total * radius * 2 + (total - 1) * gap
+    x = cx - width / 2 + radius
+    for i in range(total):
+        color = PROP_PIP_COLOR if i < prop.get("hp", total) else PROP_PIP_EMPTY
+        pygame.draw.circle(surface, color, (round(x), round(top)), radius)
+        pygame.draw.circle(surface, (30, 24, 18), (round(x), round(top)), radius, 1)
+        x += radius * 2 + gap
+
+
+def draw_rubble(surface, sx, sy, x, y, zoom=1.0, light=1.0):
+    """The heap a destroyed prop leaves on its tile."""
+    width = max(1, round(TILE_WIDTH * zoom * 0.7))
+    height = max(1, round(TILE_HEIGHT * zoom * 0.7))
+    sprite = build_rubble_sprite(width, height, seed=x * 31 + y)
+    surface.blit(sprite, (round(sx - width / 2), round(sy + TILE_HEIGHT * zoom * 0.5 - height * 0.6)))
+
+
+def stage_company(stage, party=None, stage_characters=()):
+    """Your side's roster entries for a stage, placed on its party_start.csv
+    tiles (around `stage_characters` and the props), with the stage's
+    STAGE_PARTY_RULES applied. Needs MAP_DATA and PROP_TILES loaded."""
+    slots = load_party_slots(os.path.dirname(stage["characters"]) if stage else None)
+    rules = STAGE_PARTY_RULES.get(stage["node_id"] if stage else FIRST_STAGE_NODE, {})
+    blocked = {(c["x"], c["y"]) for c in stage_characters} | PROP_TILES
+    return deploy_party(choose_party(load_roster(), party, len(slots)), slots, MAP_DATA, blocked, rules)
+
+
+async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None, from_map=False, bonus_items=None,
+               party=None):
+    """One battle. The stage's characters.csv brings the enemy (and any NPC
+    allies); your side is drawn from the roster (scripts/roster.py) - the
+    names in `party`, or the first of the roster if None - standing on the
+    stage's party_start.csv tiles. `from_map` (entered from the world map) puts a World Map
     button on the end screen in place of the demo's thanks, and closing the
     window quits the game rather than dropping back to the map. Returns
     {"victory": bool, "units": each unit's book/level progress}."""
@@ -2784,11 +3008,12 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
     # A stage's scenery lives next to its other data files, like the map
     # editor's map_layers.csv does, rather than as another stages.csv column.
     props_path = os.path.join(os.path.dirname(stage["characters"]), "props.csv") if stage else None
-    MAP_PROPS = load_props_from_csv(props_path)
-    PROP_TILES = {(prop["x"], prop["y"]) for prop in MAP_PROPS}
+    reset_props(props_path)
     ESCAPE_TILES = load_escape_tiles_from_csv(os.path.join(os.path.dirname(props_path), "escape.csv") if props_path else None)
     props_by_tile = {(prop["x"], prop["y"]): prop for prop in MAP_PROPS}
     tile_lighting = compute_tile_lighting(MAP_DATA, props_by_tile)
+    blocks_by_tile = house_blocks(props_by_tile, MAP_DATA)
+    props_seen = PROPS_VERSION
     # Weather is a per-stage setting too, in weather.csv beside props.csv.
     weather_path = os.path.join(os.path.dirname(stage["characters"]), "weather.csv") if stage else None
     weather = Weather(load_weather_from_csv(weather_path), SCREEN_WIDTH, SCREEN_HEIGHT, seed=stage["node_id"] if stage else None)
@@ -2826,6 +3051,9 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
             apply_level_bonuses(unit)
         apply_stage_skill_swaps(stage["node_id"] if stage else FIRST_STAGE_NODE, spawned)
         return spawned
+
+    # The company, from the roster, onto the stage's start tiles.
+    CHARACTER_ROSTER = stage_company(stage, party, CHARACTER_ROSTER) + CHARACTER_ROSTER
 
     # The player's own character (from the new-game survey) joins the party.
     if hero:
@@ -2880,6 +3108,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
     cursor_x, cursor_y = 0, 0
     valid_tiles = []
     move_drag_start = None
+    move_select_at = 0          # when Move was chosen (see MOVE_CONFIRM_DELAY_MS)
+    move_by_drag = False        # entered by pressing on the unit, to drag it
     combat_log = "System Engine Initialized. Map loaded cleanly."
     rotation = 2
     map_zoom = MAP_ZOOM_DEFAULT
@@ -3110,10 +3340,13 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                         (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and map_button.collidepoint(event.pos))
                         or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE)):
                     running = False
+                elif ending is not None:
+                    pass  # a story ending (e.g. A Light from Heaven) can't be restarted
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if restart_button.collidepoint(event.pos):
                         # Restart game
                         units = spawn_units()
+                        reset_props(props_path)
                         game_state = "TICKING"
                         scene_state = None
                         ending = None
@@ -3132,6 +3365,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                     if event.key in [pygame.K_SPACE, pygame.K_RETURN]:
                         # Restart game with keyboard
                         units = spawn_units()
+                        reset_props(props_path)
                         game_state = "TICKING"
                         scene_state = None
                         ending = None
@@ -3176,6 +3410,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                 and event.button == 1
                 and game_state == "MOVE_SELECT"
                 and move_drag_start is not None
+                and move_confirm_ready(move_select_at, pygame.time.get_ticks(), move_by_drag)
             ):
                 # Completes a drag: mouse went down on the active unit (which
                 # armed movement, see the MENU-click handler below) and is
@@ -3279,6 +3514,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                                     if choice == "Move" and not active_unit.has_moved and can_unit_move(active_unit, units):
                                         valid_tiles = get_valid_moves_a_star(active_unit, units)
                                         move_drag_start = (active_unit.x, active_unit.y)
+                                        move_select_at, move_by_drag = pygame.time.get_ticks(), False
                                         game_state = "MOVE_SELECT"
                                     elif choice == "Act" and not active_unit.has_acted:
                                         current_menu = active_unit.skills + ["Wait"]
@@ -3333,6 +3569,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                                         valid_tiles = get_valid_moves_a_star(active_unit, units)
                                         move_drag_start = (active_unit.x, active_unit.y)
                                         cursor_x, cursor_y = active_unit.x, active_unit.y
+                                        move_select_at, move_by_drag = pygame.time.get_ticks(), True
                                         game_state = "MOVE_SELECT"
                                         combat_log = f"{active_unit.name}: drag or click a highlighted tile to move."
 
@@ -3344,7 +3581,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                             clicked_unit = find_unit_at_tile(units, *hit_tile)
                             if clicked_unit:
                                 inspected_unit = clicked_unit
-                            if game_state == "MOVE_SELECT" and hit_tile in valid_tiles:
+                            if (game_state == "MOVE_SELECT" and hit_tile in valid_tiles
+                                    and move_confirm_ready(move_select_at, pygame.time.get_ticks())):
                                 active_unit.x, active_unit.y = hit_tile
                                 if step_sound:
                                     step_sound.play()
@@ -3385,6 +3623,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                                         "attacker": active_unit,
                                         "damage": rules["damage"],
                                         "skill": selected_skill,
+                                        "tile": (cursor_x, cursor_y),
                                         "direction": math.degrees(math.atan2(end_pos[1] - start_pos[1], end_pos[0] - start_pos[0])),
                                     }
                                     if target_unit:
@@ -3402,6 +3641,10 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                                     elif target_unit and rules["type"] == "Physical":
                                         killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill, units)
                                         if killed and attack_sound:
+                                            attack_sound.play()
+                                    elif not target_unit and rules["type"] == "Physical" and prop_at(cursor_x, cursor_y):
+                                        combat_log = strike_prop(active_unit, cursor_x, cursor_y)
+                                        if attack_sound:
                                             attack_sound.play()
                                     elif target_unit:
                                         if apply_skill_status(selected_skill, active_unit, target_unit, units):
@@ -3490,6 +3733,7 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                                 if choice == "Move" and not active_unit.has_moved and can_unit_move(active_unit, units):
                                     valid_tiles = get_valid_moves_a_star(active_unit, units)
                                     move_drag_start = (active_unit.x, active_unit.y)
+                                    move_select_at, move_by_drag = pygame.time.get_ticks(), False
                                     game_state = "MOVE_SELECT"
                                 elif choice == "Act" and not active_unit.has_acted:
                                     current_menu = active_unit.skills + ["Wait"]
@@ -3548,7 +3792,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                             game_state = "SUBMENU_ACT"
                             combat_log = "Action canceled."
                     elif event.key == pygame.K_SPACE:
-                        if game_state == "MOVE_SELECT" and (cursor_x, cursor_y) in valid_tiles:
+                        if (game_state == "MOVE_SELECT" and (cursor_x, cursor_y) in valid_tiles
+                                and move_confirm_ready(move_select_at, pygame.time.get_ticks())):
                             active_unit.x, active_unit.y = cursor_x, cursor_y
                             if step_sound:
                                 step_sound.play()
@@ -3589,9 +3834,13 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                                     "attacker": active_unit,
                                     "damage": rules["damage"],
                                     "skill": selected_skill,
+                                    "tile": (cursor_x, cursor_y),
                                     "direction": math.degrees(math.atan2(end_pos[1] - start_pos[1], end_pos[0] - start_pos[0])),
                                 }
-                                combat_log = f"{active_unit.name} fires an arrow at {target_unit.name}!"
+                                if target_unit:
+                                    combat_log = f"{active_unit.name} fires an arrow at {target_unit.name}!"
+                                else:
+                                    combat_log = f"{active_unit.name} fires an arrow."
                                 game_state = "PROJECTILE"
                                 if attack_sound:
                                     attack_sound.play()
@@ -3603,6 +3852,10 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                                 elif target_unit and rules["type"] == "Physical":
                                     killed, combat_log = resolve_physical_hit(active_unit, target_unit, selected_skill, units)
                                     if killed and attack_sound:
+                                        attack_sound.play()
+                                elif not target_unit and rules["type"] == "Physical" and prop_at(cursor_x, cursor_y):
+                                    combat_log = strike_prop(active_unit, cursor_x, cursor_y)
+                                    if attack_sound:
                                         attack_sound.play()
                                 elif target_unit:
                                     if apply_skill_status(selected_skill, active_unit, target_unit, units):
@@ -3628,6 +3881,8 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
                 target_unit = active_projectile["target"]
                 if target_unit and target_unit.is_alive():
                     _, combat_log = resolve_physical_hit(active_projectile["attacker"], target_unit, active_projectile["skill"], units)
+                elif active_projectile.get("tile") and prop_at(*active_projectile["tile"]):
+                    combat_log = strike_prop(active_projectile["attacker"], *active_projectile["tile"])
                 else:
                     combat_log = f"{active_projectile['attacker'].name}'s arrow fell short."
                 active_projectile["attacker"].has_acted = True
@@ -3697,19 +3952,41 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
             if game_state in ["MOVE_SELECT", "TARGET_SELECT"] and x == cursor_x and y == cursor_y:
                 pygame.draw.polygon(screen, CURSOR_COLOR, top_pts, 3)
 
+        if props_seen != PROPS_VERSION:
+            props_by_tile = {(prop["x"], prop["y"]): prop for prop in MAP_PROPS}
+            tile_lighting = compute_tile_lighting(MAP_DATA, props_by_tile)
+            blocks_by_tile = house_blocks(props_by_tile, MAP_DATA)
+            props_seen = PROPS_VERSION
+        render_order = get_render_order(MAP_COLS, MAP_ROWS, rotation)
+        render_rank = {tile: rank for rank, tile in enumerate(render_order)}
+        block_plans = {}
+        for block in {id(b): b for b in blocks_by_tile.values()}.values():
+            screen_points = {t: iso_to_screen(t[0], t[1], MAP_DATA[t[1]][t[0]], origin_x, origin_y, rotation, MAP_COLS, MAP_ROWS, map_zoom)
+                             for t in block["tiles"]}
+            block_plans[id(block)] = plan_house_block(block, screen_points, render_rank, map_zoom)
         # Second pass: props and units, back to front, over *all* the
         # terrain. Drawn in the same pass as the tiles, a taller tile in
         # front (a ridge, a hill) - or even a level one, since a unit's stand
         # reaches past its own tile - painted over the unit behind it.
-        for x, y in get_render_order(MAP_COLS, MAP_ROWS, rotation):
+        for x, y in render_order:
             z = MAP_DATA[y][x]
             sx, sy = iso_to_screen(x, y, z, origin_x, origin_y, rotation, MAP_COLS, MAP_ROWS, map_zoom)
             terrain_path = TERRAIN_LAYOUT[y][x] if y < len(TERRAIN_LAYOUT) and x < len(TERRAIN_LAYOUT[y]) else ""
             tile_light = tile_lighting.get((x, y), 1.0)
 
             prop = props_by_tile.get((x, y))
-            if prop:
-                draw_prop(screen, sx, sy, prop, map_zoom, light=tile_light)
+            block = blocks_by_tile.get((x, y))
+            if prop and block:
+                plan = block_plans[id(block)]
+                draw_house_block_part(screen, plan, (x, y), tile_lighting.get(plan["front"], 1.0))
+                aimed = game_state == "TARGET_SELECT" and (x, y) == (cursor_x, cursor_y) and (x, y) in valid_tiles
+                if aimed or prop["hp"] < prop["max_hp"]:
+                    draw_prop_hp(screen, sx, plan["top"] - round(5 * map_zoom), prop, map_zoom)
+            elif prop:
+                aimed = game_state == "TARGET_SELECT" and (x, y) == (cursor_x, cursor_y) and (x, y) in valid_tiles
+                draw_prop(screen, sx, sy, prop, map_zoom, light=tile_light, show_hp=aimed)
+            elif (x, y) in RUBBLE_TILES:
+                draw_rubble(screen, sx, sy, x, y, map_zoom, light=tile_light)
 
             for u in units:
                 if u.x != x or u.y != y:
@@ -3871,22 +4148,32 @@ async def main(stage=None, equipment_loadout=None, book_loadout=None, hero=None,
 
             title_surf = big_font.render(title_text, True, theme_color)
             screen.blit(title_surf, title_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 80)))
-            subtitle_surf = font.render(subtitle_text, True, (230, 230, 230))
-            screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 160)))
+            # A story ending's line is the point of the screen: half again as
+            # big, wrapped to fit the panel.
+            subtitle_font = get_font(ENDING_SUBTITLE_SIZE) if ending else font
+            subtitle_lines = wrap_text(subtitle_text, subtitle_font, game_over_content.width - 60) if ending else [subtitle_text]
+            line_y = game_over_content.y + 160 - (len(subtitle_lines) - 1) * subtitle_font.get_linesize() // 2 + (20 if ending else 0)
+            for line in subtitle_lines:
+                subtitle_surf = subtitle_font.render(line, True, (230, 230, 230))
+                screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(game_over_content.centerx, line_y)))
+                line_y += subtitle_font.get_linesize()
             log_surf = font.render(combat_log, True, (190, 190, 190))
-            screen.blit(log_surf, log_surf.get_rect(center=(game_over_content.centerx, game_over_content.y + 195)))
+            screen.blit(log_surf, log_surf.get_rect(center=(game_over_content.centerx, line_y + 35 - font.get_linesize())))
             if is_victory and not from_map:
                 thanks = get_font(40, bold=True).render(DEMO_THANKS, True, theme_color)
                 screen.blit(thanks, thanks.get_rect(center=(game_over_content.centerx, game_over_content.y + 270)))
                 detail = font.render(DEMO_THANKS_DETAIL, True, (230, 230, 230))
                 screen.blit(detail, detail.get_rect(center=(game_over_content.centerx, game_over_content.y + 315)))
 
-            pygame.draw.rect(screen, theme_color, restart_button)
-            pygame.draw.rect(screen, (255, 255, 255), restart_button, 2)
-            restart_label_color = (20, 20, 20) if is_victory else (255, 255, 255)
-            restart_text = font.render("RESTART", True, restart_label_color)
-            screen.blit(restart_text, restart_text.get_rect(center=restart_button.center))
+            if ending is None:
+                pygame.draw.rect(screen, theme_color, restart_button)
+                pygame.draw.rect(screen, (255, 255, 255), restart_button, 2)
+                restart_label_color = (20, 20, 20) if is_victory else (255, 255, 255)
+                restart_text = font.render("RESTART", True, restart_label_color)
+                screen.blit(restart_text, restart_text.get_rect(center=restart_button.center))
             if map_button:
+                if ending is not None:
+                    map_button.centerx = game_over_content.centerx  # alone now, so centred
                 pygame.draw.rect(screen, (40, 40, 52), map_button)
                 pygame.draw.rect(screen, (255, 255, 255), map_button, 2)
                 map_text = font.render("WORLD MAP", True, (255, 255, 255))

@@ -1,6 +1,7 @@
 import os
 import sys
 import math
+import random
 import asyncio
 import pygame
 
@@ -24,8 +25,11 @@ from scripts.data_editor import (
 from scripts.assets import build_character_face_portraits, load_image_safe, bring_window_to_front, load_nine_slice_frame, draw_nine_slice_panel, frame_content_rect, get_font
 from scripts.game_logic import FIRST_STAGE_NODE, Unit, apply_book_growth, draw_stamina_dots, gain_exp, main as run_battle
 from scripts import icons
-from scripts.hero import HERO_TOKEN, load_classes_from_csv, save_profile
+from scripts.hero import load_classes_from_csv, save_profile
+from scripts.hero_look import hero_token
 from scripts.story import load_chapters, load_story, play_scene, scene_ids
+from scripts.voices import MUSIC_VOLUME
+from scripts.roster import LEADER, load_roster, recruited_after, recruits_for
 
 # --- WORLD MAP DATA ---
 # A grid of square spaces in the style of Super Mario Bros. 3's world maps:
@@ -50,6 +54,8 @@ except (OSError, ValueError, KeyError):
     NODES, START_NODE = _FALLBACK_NODES, "damascus"
 # Half the width of a square space, for clicks.
 NODE_HALF = WORLD_MAP_CELL * 0.42
+
+WORLD_THEME_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "world_theme.ogg")
 
 STATE_MAP = "MAP"
 STATE_TRANSITION = "TRANSITION"
@@ -125,12 +131,186 @@ def pick_neighbor_by_direction(current_id, dx, dy):
     return best_id
 
 
+# The painted landscape under the roads: a meadow, the Mediterranean along
+# the west with its beach, mountains to the east, and bushes, olive trees,
+# flowers and rocks dotted about wherever there's no road or square.
+MEADOW = (120, 176, 78)
+MEADOW_LIGHT = (138, 190, 88)
+MEADOW_DARK = (104, 158, 68)
+SEA = (64, 146, 198)
+SEA_DEEP = (44, 112, 170)
+SAND = (232, 214, 160)
+FOAM = (236, 246, 250)
+LEAF = (66, 128, 52)
+LEAF_DARK = (38, 84, 34)
+LEAF_LIGHT = (112, 170, 82)
+OLIVE = (124, 148, 92)
+BARK = (110, 76, 46)
+ROCK = (150, 146, 136)
+MOUNTAIN = (150, 128, 104)
+MOUNTAIN_SHADE = (118, 98, 80)
+SNOW = (246, 246, 240)
+FLOWER_COLORS = [(250, 250, 240), (250, 214, 70), (236, 120, 150), (180, 140, 230)]
+SCENERY_CLEARANCE = 54    # how far decorations keep from a road's centre line
+_background_cache = {}
+
+
+def shoreline_x(y):
+    """Where the sea meets the land, at screen row y."""
+    return 150 + 42 * math.sin(y / 115) + 18 * math.sin(y / 41 + 1.3)
+
+
+def _soft_blob(surface, color, center, radius, alpha):
+    blob = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+    pygame.draw.circle(blob, (*color, alpha), (radius, radius), radius)
+    surface.blit(blob, (center[0] - radius, center[1] - radius))
+
+
+def _shadow(surface, x, y, w, h):
+    shade = pygame.Surface((w, h), pygame.SRCALPHA)
+    pygame.draw.ellipse(shade, (20, 40, 10, 70), shade.get_rect())
+    surface.blit(shade, (x - w // 2, y - h // 2))
+
+
+def _bush(surface, x, y, rng):
+    _shadow(surface, x, y + 9, 40, 12)
+    for dx, dy, r in ((-9, 2, 9), (9, 2, 9), (0, -4, 11)):
+        pygame.draw.circle(surface, LEAF_DARK, (x + dx, y + dy), r + 2)
+    for dx, dy, r in ((-9, 2, 9), (9, 2, 9), (0, -4, 11)):
+        pygame.draw.circle(surface, LEAF, (x + dx, y + dy), r)
+    pygame.draw.circle(surface, LEAF_LIGHT, (x - 4, y - 8), 4)
+
+
+def _tree(surface, x, y, rng, olive=False):
+    _shadow(surface, x + 4, y + 14, 34, 10)
+    pygame.draw.rect(surface, BARK, (x - 3, y - 2, 6, 16), border_radius=2)
+    canopy = OLIVE if olive else LEAF
+    for dx, dy, r in ((-8, -8, 10), (8, -8, 10), (0, -16, 12)):
+        pygame.draw.circle(surface, LEAF_DARK, (x + dx, y + dy), r + 2)
+    for dx, dy, r in ((-8, -8, 10), (8, -8, 10), (0, -16, 12)):
+        pygame.draw.circle(surface, canopy, (x + dx, y + dy), r)
+    pygame.draw.circle(surface, tuple(min(255, c + 30) for c in canopy), (x - 4, y - 20), 4)
+
+
+def _flowers(surface, x, y, rng):
+    color = rng.choice(FLOWER_COLORS)
+    for _ in range(rng.randint(4, 7)):
+        fx, fy = x + rng.randint(-14, 14), y + rng.randint(-8, 8)
+        pygame.draw.line(surface, LEAF_DARK, (fx, fy), (fx, fy + 4), 1)
+        for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+            pygame.draw.circle(surface, color, (fx + dx, fy + dy), 2)
+        pygame.draw.circle(surface, (240, 180, 40), (fx, fy), 1)
+
+
+def _rock(surface, x, y, rng):
+    _shadow(surface, x, y + 6, 30, 9)
+    w, h = rng.randint(18, 26), rng.randint(12, 16)
+    pygame.draw.ellipse(surface, (90, 86, 80), (x - w // 2 - 1, y - h // 2 - 1, w + 2, h + 2))
+    pygame.draw.ellipse(surface, ROCK, (x - w // 2, y - h // 2, w, h))
+    pygame.draw.ellipse(surface, (190, 186, 176), (x - w // 4, y - h // 2 + 2, w // 3, h // 3))
+
+
+def _mound(surface, x, y, rng):
+    w, h = rng.randint(54, 76), rng.randint(26, 36)
+    _shadow(surface, x, y + 2, w + 8, 12)
+    dome = [(x + w / 2 * math.cos(a), y - h * math.sin(a)) for a in [math.pi * i / 20 for i in range(21)]]
+    pygame.draw.polygon(surface, (98, 156, 64), dome)
+    pygame.draw.lines(surface, LEAF_DARK, False, dome, 2)
+    pygame.draw.ellipse(surface, MEADOW_LIGHT, (x - w // 4, y - h + 5, w // 3, h // 2))
+
+
+def _mountain(surface, x, base, width, height, rng):
+    peak = (x, base - height)
+    left, right = (x - width // 2, base), (x + width // 2, base)
+    pygame.draw.polygon(surface, MOUNTAIN, [left, peak, (x, base)])
+    pygame.draw.polygon(surface, MOUNTAIN_SHADE, [peak, right, (x, base)])
+    cap = 0.28
+    cap_l = (x - width // 2 * cap, base - height * (1 - cap))
+    cap_r = (x + width // 2 * cap, base - height * (1 - cap))
+    pygame.draw.polygon(surface, SNOW, [cap_l, peak, cap_r, (x + 4, cap_l[1] + 6), (x - 6, cap_l[1] + 3)])
+    pygame.draw.lines(surface, (86, 70, 56), False, [left, peak, right], 2)
+
+
+def _distance_to_segment(p, a, b):
+    (px, py), (ax, ay), (bx, by) = p, a, b
+    dx, dy = bx - ax, by - ay
+    length = dx * dx + dy * dy
+    t = 0 if length == 0 else max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / length))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def build_world_background(nodes, seed=12):
+    """The painted landscape for this node layout (cached)."""
+    key = tuple(sorted((n, tuple(node["pos"])) for n, node in nodes.items()))
+    if key in _background_cache:
+        return _background_cache[key]
+    rng = random.Random(seed)
+    surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    surface.fill(MEADOW)
+    # Light and shade drifting across the meadow.
+    for _ in range(70):
+        color = rng.choice((MEADOW_LIGHT, MEADOW_DARK))
+        _soft_blob(surface, color, (rng.randint(0, SCREEN_WIDTH), rng.randint(0, SCREEN_HEIGHT)), rng.randint(40, 120), 70)
+    for _ in range(900):
+        x, y = rng.randint(0, SCREEN_WIDTH), rng.randint(0, SCREEN_HEIGHT)
+        pygame.draw.line(surface, MEADOW_DARK, (x, y), (x + rng.choice((-2, 2)), y - 4), 1)
+
+    # The sea to the west: deep water, a beach, foam along the edge.
+    rows = range(0, SCREEN_HEIGHT + 8, 8)
+    pygame.draw.polygon(surface, SAND, [(0, 0)] + [(shoreline_x(y) + 22, y) for y in rows] + [(0, SCREEN_HEIGHT)])
+    pygame.draw.polygon(surface, SEA, [(0, 0)] + [(shoreline_x(y), y) for y in rows] + [(0, SCREEN_HEIGHT)])
+    pygame.draw.polygon(surface, SEA_DEEP, [(0, 0)] + [(shoreline_x(y) - 70, y) for y in rows] + [(0, SCREEN_HEIGHT)])
+    pygame.draw.lines(surface, FOAM, False, [(shoreline_x(y), y) for y in rows], 3)
+    for _ in range(26):
+        y = rng.randint(20, SCREEN_HEIGHT - 20)
+        x = rng.uniform(10, shoreline_x(y) - 24)
+        pygame.draw.arc(surface, FOAM, (x, y, 16, 8), math.pi * 0.1, math.pi * 0.9, 2)
+        pygame.draw.arc(surface, FOAM, (x + 12, y, 16, 8), math.pi * 0.1, math.pi * 0.9, 2)
+
+    # Mountains to the east, back row first.
+    xs = [node["pos"][0] for node in nodes.values()]
+    east = max(xs) + WORLD_MAP_CELL * 0.9
+    for base, scale in ((SCREEN_HEIGHT * 0.3, 0.8), (SCREEN_HEIGHT * 0.62, 1.0), (SCREEN_HEIGHT * 0.95, 0.9)):
+        x = east + rng.randint(0, 40)
+        while x < SCREEN_WIDTH + 80:
+            width = rng.randint(120, 170) * scale
+            _mountain(surface, x, base + rng.randint(-30, 30), width, width * rng.uniform(0.7, 0.95), rng)
+            x += width * 0.62
+
+    # Scenery in the open ground, clear of the roads and squares.
+    segments = []
+    for node_id, node in nodes.items():
+        for other in node["connections"]:
+            if other in nodes:
+                segments.append((node["pos"], nodes[other]["pos"]))
+    centres = [node["pos"] for node in nodes.values()]
+    step = WORLD_MAP_CELL // 2
+    for gy in range(70, SCREEN_HEIGHT - 50, step):
+        for gx in range(0, SCREEN_WIDTH, step):
+            x, y = gx + rng.randint(-12, 12), gy + rng.randint(-12, 12)
+            if x < shoreline_x(y) + 40 or x > east - 30 or rng.random() > 0.42:
+                continue
+            if any(_distance_to_segment((x, y), a, b) < SCENERY_CLEARANCE for a, b in segments):
+                continue
+            if any(math.hypot(x - cx, y - cy) < WORLD_MAP_CELL * 0.75 for cx, cy in centres):
+                continue
+            roll = rng.random()
+            if roll < 0.32:
+                _bush(surface, x, y, rng)
+            elif roll < 0.52:
+                _tree(surface, x, y, rng, olive=rng.random() < 0.6)
+            elif roll < 0.74:
+                _flowers(surface, x, y, rng)
+            elif roll < 0.86:
+                _rock(surface, x, y, rng)
+            else:
+                _mound(surface, x, y, rng)
+    _background_cache[key] = surface
+    return surface
+
+
 def draw_world_background(surface):
-    """A checkered grass field, Mario-map style - no background picture."""
-    cell = WORLD_MAP_CELL // 2
-    for y in range(0, SCREEN_HEIGHT, cell):
-        for x in range(0, SCREEN_WIDTH, cell):
-            pygame.draw.rect(surface, GRASS[((x // cell) + (y // cell)) % 2], (x, y, cell, cell))
+    surface.blit(build_world_background(NODES), (0, 0))
 
 
 def draw_road(surface, a, b):
@@ -241,11 +421,15 @@ def draw_room_popup(surface, font, popup, frame=None):
     surface.blit(hint, hint.get_rect(bottomright=(inner.right - 8, inner.bottom - 2)))
 
 
+TROOP_MARKER_SIZE = (252, 126)
+
+
 def draw_troop_marker(surface, leader_icon, pos, bob_offset):
     x, y = pos
     y += bob_offset
     if leader_icon:
-        rect = leader_icon.get_rect(center=(x, y - 30))
+        # Stood at the back of the square, so its number still shows.
+        rect = leader_icon.get_rect(midbottom=(x, y - 12))
         surface.blit(leader_icon, rect)
     else:
         pygame.draw.circle(surface, TEAM_COLOR, (int(x), int(y - 20)), 14)
@@ -356,40 +540,55 @@ def draw_story_list(surface, font, chapters, heard, index, frame=None):
     surface.blit(font.render("[Enter / Click] Replay   [Esc] Back", True, TEXT_DIM), (content.x, content.bottom - 24))
 
 
+UNIT_LIST_ROWS = 12      # per column; a bigger company spills into a second
+UNIT_LIST_COLUMN = 520
+
+
+def unit_list_columns(units):
+    return max(1, -(-len(units) // UNIT_LIST_ROWS))
+
+
 def unit_list_layout(units, frame=None):
     # Wide enough that after the ~110px frame border eats into both sides,
-    # a full row (portrait + name/class + faith/mp) still has the ~460px
-    # of width the original tight layout was designed for.
-    width, height = 680, 240 + len(units) * 46
+    # each column's rows (portrait + name/class + faith/stamina) have room.
+    columns = unit_list_columns(units)
+    rows = min(len(units), UNIT_LIST_ROWS)
+    width, height = 160 + UNIT_LIST_COLUMN * columns, 240 + max(1, rows) * 46
     mx, my = SCREEN_WIDTH // 2 - width // 2, SCREEN_HEIGHT // 2 - height // 2
     panel_rect = pygame.Rect(mx, my, width, height)
     content = frame_content_rect(panel_rect, frame) if frame else pygame.Rect(mx + 14, my + 40, width - 28, height - 54)
-    row_rects = [pygame.Rect(content.x - 6, content.y + 34 + idx * 46 - 4, content.width + 12, 40) for idx in range(len(units))]
+    column_width = content.width // columns
+    row_rects = [pygame.Rect(content.x - 6 + (idx // UNIT_LIST_ROWS) * column_width,
+                             content.y + 34 + (idx % UNIT_LIST_ROWS) * 46 - 4, column_width + 4, 40)
+                 for idx in range(len(units))]
     return panel_rect, row_rects
 
 
-def draw_unit_list(surface, font, units, portraits, index, frame=None):
+def draw_unit_list(surface, font, units, portraits, index, frame=None, benched=()):
     panel_rect, row_rects = unit_list_layout(units, frame)
     draw_panel_bg(surface, panel_rect, frame)
     content = frame_content_rect(panel_rect, frame) if frame else pygame.Rect(panel_rect.x + 14, panel_rect.y + 40, panel_rect.width - 28, panel_rect.height - 54)
-    surface.blit(font.render("UNIT", True, PANEL_BORDER), (content.x, content.y))
+    surface.blit(font.render(f"UNIT  -  your company of {len(units)}", True, PANEL_BORDER), (content.x, content.y))
 
     for idx, unit in enumerate(units):
-        row_y = content.y + 34 + idx * 46
+        row = row_rects[idx]
+        x, row_y = row.x + 6, row.y + 4
         selected = idx == index
         if selected:
-            pygame.draw.rect(surface, (35, 35, 55), row_rects[idx])
+            pygame.draw.rect(surface, (35, 35, 55), row)
         portrait = portraits.get(unit.name)
         if portrait:
             thumb = pygame.transform.smoothscale(portrait, (56, 28))
-            surface.blit(thumb, (content.x, row_y))
-        name_color = PANEL_BORDER if selected else TEXT_MAIN
+            if unit.name in benched:
+                thumb.set_alpha(110)
+            surface.blit(thumb, (x, row_y))
+        name_color = PANEL_BORDER if selected else (TEXT_DIM if unit.name in benched else TEXT_MAIN)
         pointer = "->" if selected else "  "
-        surface.blit(font.render(f"{pointer} {unit.name}", True, name_color), (content.x + 66, row_y))
-        surface.blit(font.render(unit.char_class, True, TEXT_DIM), (content.x + 66, row_y + 18))
-        stats = font.render(f"Faith {round(unit.faith):3}/{FAITH_CAP}   Stamina", True, TEAM_COLOR)
-        surface.blit(stats, (content.x + 246, row_y + 6))
-        draw_stamina_dots(surface, content.x + 254 + stats.get_width(), row_y + 10, unit.mp, unit.max_mp, radius=5, gap=3)
+        surface.blit(font.render(f"{pointer} {unit.name}", True, name_color), (x + 66, row_y))
+        surface.blit(font.render("Benched" if unit.name in benched else unit.char_class, True, TEXT_DIM), (x + 66, row_y + 18))
+        stats = font.render(f"Faith {round(unit.faith):3}", True, TEAM_COLOR)
+        surface.blit(stats, (x + 236, row_y + 6))
+        draw_stamina_dots(surface, x + 246 + stats.get_width(), row_y + 10, unit.mp, unit.max_mp, radius=5, gap=3)
 
 
 # Display labels for stats shown to the player. Magic Attack/Magic Defense
@@ -434,6 +633,7 @@ def unit_detail_layout(frame=None):
     content = frame_content_rect(panel_rect, frame) if frame else pygame.Rect(mx + 110, my + 110, width - 220, height - 220)
     equip_button = pygame.Rect(content.x + content.width - 140, content.y + content.height - 34, 124, 26)
     books_button = pygame.Rect(equip_button.x - 134, equip_button.y, 124, 26)
+    bench_button = pygame.Rect(books_button.x - 134, equip_button.y, 124, 26)
 
     cx, cy = content.x, content.y
     # Hit-testable rects for the hover tooltips - shared with draw_unit_detail
@@ -450,11 +650,11 @@ def unit_detail_layout(frame=None):
         y = cy + 172 + row * 26
         stat_hover_rects[key] = pygame.Rect(col_x[col], y - 2, 230, 22)
 
-    return panel_rect, equip_button, books_button, stat_hover_rects
+    return panel_rect, equip_button, books_button, stat_hover_rects, bench_button
 
 
-def draw_unit_detail(surface, font, unit, portraits, frame=None):
-    panel_rect, equip_button, books_button, stat_hover_rects = unit_detail_layout(frame)
+def draw_unit_detail(surface, font, unit, portraits, frame=None, benched=False, bio=""):
+    panel_rect, equip_button, books_button, stat_hover_rects, bench_button = unit_detail_layout(frame)
     draw_panel_bg(surface, panel_rect, frame)
     content = frame_content_rect(panel_rect, frame) if frame else pygame.Rect(panel_rect.x + 110, panel_rect.y + 110, panel_rect.width - 220, panel_rect.height - 220)
     cx, cy, width, height = content.x, content.y, content.width, content.height
@@ -496,6 +696,25 @@ def draw_unit_detail(surface, font, unit, portraits, frame=None):
     pygame.draw.rect(surface, PANEL_BORDER, books_button, 2)
     books_label = font.render("[B] Books", True, PANEL_BORDER)
     surface.blit(books_label, books_label.get_rect(center=books_button.center))
+
+    # The leader always goes; anyone else can sit a battle out.
+    if unit.name != LEADER:
+        pygame.draw.rect(surface, PANEL_BG, bench_button)
+        pygame.draw.rect(surface, PANEL_BORDER, bench_button, 2)
+        bench_label = font.render("[D] Deploy" if benched else "[D] Bench", True, PANEL_BORDER)
+        surface.blit(bench_label, bench_label.get_rect(center=bench_button.center))
+
+    # Who they are, word-wrapped under the skills.
+    words, line, y = bio.split(), "", cy + 356
+    for word in words:
+        trial = f"{line} {word}".strip()
+        if font.size(trial)[0] > width - 32:
+            surface.blit(font.render(line, True, TEXT_DIM), (cx + 16, y))
+            line, y = word, y + 22
+        else:
+            line = trial
+    if line:
+        surface.blit(font.render(line, True, TEXT_DIM), (cx + 16, y))
 
 
 def cycle_equipment(unit, slot_key, direction, equipment_pools):
@@ -686,20 +905,35 @@ async def main(hero=None):
 
     ui_frame = load_nine_slice_frame()
 
+    def play_theme():
+        """The world map's theme (tools/generate_world_music.py), looping."""
+        try:
+            pygame.mixer.music.load(WORLD_THEME_PATH)
+            pygame.mixer.music.set_volume(MUSIC_VOLUME)
+            pygame.mixer.music.play(-1)
+        except (pygame.error, OSError):
+            pass
+    play_theme()
+
     stage_manifest = load_stage_manifest()
 
-    roster_source = (stage_manifest.get(START_NODE) or stage_manifest.get(FIRST_STAGE_NODE, {})).get("characters")
-    roster = load_characters_from_csv(roster_source)
-    units = [Unit(char_data) for char_data in roster if char_data["team"] == "Player"]
+    # Your company: the roster members recruited so far (see roster.py).
+    # Older saves without a recruited list catch up from the scenes heard.
+    roster = load_roster()
+    roster_by_name = {c["name"]: c for c in roster}
+    profile = hero or {}
+    recruited = set(profile.get("recruited") or recruited_after(profile.get("heard", []), roster))
+    benched = set(profile.get("bench", [])) & recruited
+    units = [Unit(c) for c in roster if c["name"] in recruited]
     portraits = build_character_face_portraits(units, [])
     leader = units[0] if units else None
     leader_icon = None
     classes = load_classes_from_csv()
     if hero and hero.get("type") in classes:
-        leader_icon = load_image_safe(HERO_TOKEN.format(role=classes[hero["type"]]["role"].lower()))
-        leader_icon = pygame.transform.smoothscale(leader_icon, (84, 42)) if leader_icon else None
+        leader_icon = load_image_safe(hero_token(hero, classes[hero["type"]]["role"]))
+        leader_icon = pygame.transform.smoothscale(leader_icon, TROOP_MARKER_SIZE) if leader_icon else None
     elif leader and portraits.get(leader.name):
-        leader_icon = pygame.transform.smoothscale(portraits[leader.name], (84, 42))
+        leader_icon = pygame.transform.smoothscale(portraits[leader.name], TROOP_MARKER_SIZE)
 
     equipment_registry = load_equipment_from_csv()
     equipment_pools = equipment_by_slot(equipment_registry)
@@ -713,7 +947,6 @@ async def main(hero=None):
     story = load_story()
     chapters = load_chapters()
     chapter_by_node = {c["node_id"]: c for c in chapters}
-    profile = hero or {}
     hero_name = profile.get("name")
     heard = set(profile.get("heard", []))  # ids of the scenes played through
     # Rooms already visited, stages won, and gift items not yet used up.
@@ -753,8 +986,10 @@ async def main(hero=None):
                      "level": u.level, "exp": u.exp}
             for u in units
         }
+        party = [u.name for u in units if u.name not in benched]
         result = await run_battle(stage=stage_manifest.get(node_id), equipment_loadout=equipment_loadout,
-                                  book_loadout=book_loadout, hero=hero, from_map=True, bonus_items=dict(satchel_gifts))
+                                  book_loadout=book_loadout, hero=hero, from_map=True, bonus_items=dict(satchel_gifts),
+                                  party=party)
         # Base uses refill every battle; gifts last until they're used up
         # (the base uses go first).
         left = result.get("satchel", {})
@@ -774,6 +1009,7 @@ async def main(hero=None):
                     u.exp = p.get("exp", u.exp)
         pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("The Road to Jerusalem")
+        play_theme()
         save_progress()
         return result["victory"]
 
@@ -782,7 +1018,8 @@ async def main(hero=None):
             party = {u.name: {"level": u.level, "exp": u.exp, "books": dict(u.books), "turns": dict(u.book_turns),
                               "gain": dict(u.book_gain), "equipment": dict(u.equipment)} for u in units}
             profile.update(heard=sorted(heard), node=current_node, visited=sorted(visited), rooms_used=sorted(rooms_used),
-                           cleared=sorted(cleared), satchel={n: c for n, c in satchel_gifts.items() if c > 0}, party=party)
+                           cleared=sorted(cleared), satchel={n: c for n, c in satchel_gifts.items() if c > 0}, party=party,
+                           recruited=[u.name for u in units], bench=sorted(benched))
             save_profile(profile)
 
     def visit_room(node_id):
@@ -813,10 +1050,53 @@ async def main(hero=None):
         save_progress()
         return {"title": node["name"], "text": room.get("text", ""), "lines": lines}
 
+    def toggle_bench(unit):
+        benched.symmetric_difference_update({unit.name})
+        save_progress()
+
+    def recruit(scene_id):
+        """Whoever joins after this scene steps into the company. Returns the
+        popup announcing them, or None."""
+        present = {u.name for u in units}
+        joining = [name for name in recruits_for(scene_id, roster) if name not in present]
+        if not joining:
+            return None
+        newcomers = [Unit(roster_by_name[name]) for name in joining]
+        units.extend(newcomers)
+        order = list(roster_by_name)
+        units.sort(key=lambda u: order.index(u.name))
+        portraits.update(build_character_face_portraits(newcomers, []))
+        if len(joining) == 1:
+            return {"title": f"{joining[0]} joins your company!", "text": roster_by_name[joining[0]]["bio"], "lines": []}
+        return {"title": "New companions join you!", "text": "From here on they walk the road with you:",
+                "lines": [f"{name} - {roster_by_name[name]['class']}" for name in joining]}
+
+    async def announce(popup):
+        """Shows a popup over whatever is on screen until it's dismissed -
+        so a recruit from a stage's opening scene is introduced before the
+        battle rather than after it."""
+        backdrop = screen.copy()
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.event.post(event)
+                    return
+                if ((event.type == pygame.MOUSEBUTTONDOWN and event.button == 1)
+                        or (event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE))):
+                    return
+            screen.blit(backdrop, (0, 0))
+            draw_room_popup(screen, font, popup, ui_frame)
+            pygame.display.flip()
+            clock.tick(60)
+            await asyncio.sleep(0)
+
     async def play(scene_id):
         if await play_scene(screen, scene_id, hero_name=hero_name, story=story):
             heard.add(scene_id)
+            popup = recruit(scene_id)
             save_progress()
+            if popup:
+                await announce(popup)
 
     async def enter_node(node_id):
         """A node's story: its intro scene, its battle (if it has one) and,
@@ -911,13 +1191,15 @@ async def main(hero=None):
                         menu_index = 0
 
                 elif state == STATE_UNIT_DETAIL:
-                    _, equip_button, books_button, _ = unit_detail_layout(ui_frame)
+                    _, equip_button, books_button, _, bench_button = unit_detail_layout(ui_frame)
                     if equip_button.collidepoint(event.pos):
                         state = STATE_EQUIPMENT
                         equip_slot_index = 0
                     elif books_button.collidepoint(event.pos):
                         state = STATE_BOOKS
                         book_slot_index = 0
+                    elif bench_button.collidepoint(event.pos) and selected_unit.name != LEADER:
+                        toggle_bench(selected_unit)
                     else:
                         state = STATE_UNIT_LIST
 
@@ -1026,6 +1308,8 @@ async def main(hero=None):
                     elif event.key == pygame.K_b:
                         state = STATE_BOOKS
                         book_slot_index = 0
+                    elif event.key == pygame.K_d and selected_unit.name != LEADER:
+                        toggle_bench(selected_unit)
                     elif event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
                         state = STATE_UNIT_LIST
 
@@ -1103,10 +1387,11 @@ async def main(hero=None):
         elif state == STATE_STORY:
             draw_story_list(screen, font, chapters, {c["node_id"] for c in chapters if chapter_heard(c["node_id"])}, story_index, ui_frame)
         elif state == STATE_UNIT_LIST:
-            draw_unit_list(screen, font, units, portraits, unit_index, ui_frame)
+            draw_unit_list(screen, font, units, portraits, unit_index, ui_frame, benched)
         elif state == STATE_UNIT_DETAIL and selected_unit:
-            draw_unit_detail(screen, font, selected_unit, portraits, ui_frame)
-            _, _, _, stat_hover_rects = unit_detail_layout(ui_frame)
+            draw_unit_detail(screen, font, selected_unit, portraits, ui_frame, selected_unit.name in benched,
+                             roster_by_name.get(selected_unit.name, {}).get("bio", ""))
+            _, _, _, stat_hover_rects, _ = unit_detail_layout(ui_frame)
             hovered_stat = next((key for key, rect in stat_hover_rects.items() if rect.collidepoint(mouse_pos)), None)
             if hovered_stat:
                 draw_tooltip(screen, font, STAT_TOOLTIPS[hovered_stat], mouse_pos)

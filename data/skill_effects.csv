@@ -94,3 +94,9 @@ Persecute,slow_chains,target,hit
 Blind,blind_veil,target,hit
 Blind,fizzle,target,miss
 @blind,blind_veil,target,always
+@prop_hit,fizzle,target,always
+@prop_destroyed,fizzle,target,always
+@prop_destroyed,starburst,target,always
+Kick,barrier_dome,target,blocked
+Kick,starburst,target,hit
+Kick,fizzle,target,miss

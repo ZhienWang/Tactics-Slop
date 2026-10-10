@@ -20,9 +20,10 @@ Run from the project root:  python assets/unit_art.py
 import math
 import os
 
-import numpy as np
-import pymupdf
-from PIL import Image
+# numpy, PyMuPDF and Pillow are only needed to render PNGs (render_png), so
+# they're imported there - the SVG building itself is plain Python, which
+# lets the game draw a custom hero live (scripts/hero_look.py), even in the
+# browser build.
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -514,7 +515,7 @@ def prop_halberd():
 
 
 def prop_saw():
-    teeth = "M 39.7 32.2 " + " ".join(f"L 40.9 {y + 0.55:.2f} L 39.7 {y + 1.1:.2f}" for y in np.arange(32.2, 41.2, 1.1))
+    teeth = "M 39.7 32.2 " + " ".join(f"L 40.9 {y + 0.55:.2f} L 39.7 {y + 1.1:.2f}" for y in (32.2 + 1.1 * i for i in range(9)))
     return "".join([
         path(teeth, fill=STEEL["shade"], width=0.18),
         poly([(38.3, 32), (39.7, 32), (39.7, 42.5), (38.3, 42.5)], STEEL["base"]),
@@ -582,6 +583,9 @@ def figure_svg(spec):
 
 
 def render_png(svg, out_path):
+    import numpy as np
+    import pymupdf
+    from PIL import Image
     page = pymupdf.open(stream=svg.encode("utf-8"), filetype="svg")[0]
     pix = page.get_pixmap(matrix=pymupdf.Matrix(SUPERSAMPLE, SUPERSAMPLE), alpha=True)
     rgba = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, 4).astype(np.float32)

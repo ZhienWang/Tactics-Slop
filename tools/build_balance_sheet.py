@@ -28,6 +28,8 @@ from openpyxl.worksheet.datavalidation import DataValidation  # noqa: E402
 import scripts.game_logic as g  # noqa: E402
 from scripts.config import FAITH_CAP  # noqa: E402
 from scripts.data_editor import load_characters_from_csv, load_skills_from_csv, load_stage_manifest  # noqa: E402
+from scripts.roster import choose_party, load_party_slots, load_roster  # noqa: E402
+from scripts.game_logic import STAGE_PARTY_RULES  # noqa: E402
 from scripts.hero import load_classes_from_csv  # noqa: E402
 
 OUT = os.path.join(ROOT, "doc", "Road_to_Jerusalem_Balance_Sheet.xlsx")
@@ -207,7 +209,14 @@ def build_units(wb, ref, growth):
     ws = wb.create_sheet("Units")
     header(ws, 1, UNIT_COLUMNS, [26, 11, 24, 8, 13, 7, 7, 30] + [8] * 10 + [10, 10, 10, 11, 13, 10, 13, 13, 11, 11, 9, 13, 11])
     manifest = load_stage_manifest()
+    # Each stage's default company (the first of the roster, one per start
+    # tile, with the stage's rules), then its enemies and NPCs.
     rows = []
+    roster = load_roster()
+    for node in manifest:
+        rules = STAGE_PARTY_RULES.get(node, {})
+        for c in choose_party(roster, None, len(load_party_slots(os.path.dirname(manifest[node]["characters"])))):
+            rows.append((node, {**c, **rules}))
     for node in manifest:
         for c in load_characters_from_csv(manifest[node]["characters"]):
             rows.append((node, c))

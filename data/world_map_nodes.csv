@@ -5,13 +5,14 @@ gethsemane,Gethsemane,4,1,story,galilee|damascus,0
 damascus,Road to Damascus,7,1,stage,gethsemane|jerusalem,0
 jerusalem,Jerusalem,10,1,stage,damascus|caesarea|gamaliel,0
 gamaliel,Gamaliel's School,12,1,library,jerusalem,0
-caesarea,Caesarea,10,3,town,jerusalem|cornelius|antioch,0
+caesarea,Caesarea,10,3,story,jerusalem|cornelius|antioch|lystra,0
 cornelius,Cornelius's House,12,3,party,caesarea,0
 antioch,Antioch,7,3,stage,caesarea|corinth|philippi,0
+lystra,Lystra,10,5,story,caesarea|philippi,0
 corinth,Corinth,4,3,stage,antioch|troas,0
-philippi,Philippi,7,5,stage,antioch|lydia|troas,0
-lydia,Lydia's House,9,5,party,philippi,0
-troas,Troas,4,5,town,corinth|philippi|ephesus,0
+philippi,Philippi,7,5,stage,antioch|lystra|lydia|troas,0
+lydia,Lydia's House,7,6,party,philippi,0
+troas,Troas,4,5,story,corinth|philippi|ephesus,0
 ephesus,Ephesus,4,7,stage,troas|tyrannus|patmos|rome,0
 tyrannus,Hall of Tyrannus,4,8,library,ephesus,0
 patmos,Patmos,1,7,story,ephesus,0

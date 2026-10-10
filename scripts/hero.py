@@ -35,7 +35,7 @@ ROLE_COLORS = {
     "Explorer": (228, 174, 58),
 }
 # The hero's map token, by role (see assets/hero_art.py), and HUD face.
-HERO_TOKEN = "assets/hero_{role}.png"
+HERO_TOKEN = "assets/characters/hero_{role}.png"  # see tools/recast_characters.py
 HERO_FACE = "assets/portraits/converts/convert_07.png"
 PROFILE_PATH = os.path.join(os.path.expanduser("~"), ".road_to_jerusalem", "profile.json")
 # In the browser (the pygbag web build) files vanish on reload, so the
@@ -164,6 +164,7 @@ def hero_character(profile, roster, map_data, prop_tiles, classes=None, leader_n
     """The hero's characters.csv-style entry for a battle: placed on the
     free tile nearest Paul (or the first Player unit), riding whatever Paul
     rides on this stage. None if there's no room."""
+    from scripts.hero_look import hero_token  # (imports figure_builder - only needed here)
     classes = classes or load_classes_from_csv()
     row = classes[profile["type"]]
     players = [c for c in roster if c["team"] == "Player"]
@@ -178,8 +179,10 @@ def hero_character(profile, roster, map_data, prop_tiles, classes=None, leader_n
         "x": tile[0], "y": tile[1],
         "speed": row["speed"], "mv": row["mv"], "jump": row["jump"], "mp": row["mp"],
         "skills": list(row["skills"]), "color": ROLE_COLORS[row["role"]],
-        "portrait_path": HERO_TOKEN.format(role=row["role"].lower()),
-        "face_portrait": HERO_FACE,
+        "portrait_path": hero_token(profile, row["role"]),
+        # A hero with their own look shows it on the HUD too (as recruits
+        # without a painted portrait do); otherwise the painted face.
+        "face_portrait": "" if profile.get("look") else HERO_FACE,
         "magic_attack": row["magic_attack"], "magic_defense": row["magic_defense"],
         "faith": row["faith"], "bravery": row["bravery"], "patience": row["patience"], "love": row["love"],
         "level": 1, "mount": anchor.get("mount", "") if anchor else "", "hero": True,

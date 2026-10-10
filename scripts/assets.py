@@ -131,9 +131,22 @@ def draw_nine_slice_panel(surface, rect, frame, interior_color=UI_FRAME_INTERIOR
     surface.blit(pygame.transform.smoothscale(frame["corner_br"], (corner_w, corner_h)), (x + w - corner_w, y + h - corner_h))
 
 
+# Images made at run time rather than loaded from disk (e.g. the hero's own
+# look, drawn live by scripts/hero_look.py), under a made-up path, so code
+# that loads unit art by path finds them like any other file.
+REGISTERED_IMAGES = {}
+
+
+def register_image(path, surface):
+    REGISTERED_IMAGES[path] = surface
+
+
 def load_image_safe(path, invalid_paths=None):
     if not path:
         return None
+    if path in REGISTERED_IMAGES:
+        image = REGISTERED_IMAGES[path].copy()
+        return image.convert_alpha() if pygame.display.get_surface() else image
     if not os.path.isabs(path):
         path = os.path.join(os.path.dirname(os.path.dirname(__file__)), path)
     if not os.path.exists(path):
@@ -308,6 +321,272 @@ def build_boulder_sprite(width, height, seed=0):
     return surface
 
 
+# --- buildings and fixtures: houses, wells, ranches, and the rubble a
+# destroyed one leaves. Like the boulder, each sprite's footprint follows
+# the tile diamond (half as tall as it is wide) and its bottom point is the
+# footprint's front corner. Seeded, so each looks a little different but
+# stays stable frame to frame. Cached.
+PROP_INK = (46, 34, 26)
+_building_cache = {}
+
+
+def _iso_box(surface, cx, bottom, half_w, wall, left_color, right_color, top_color=None):
+    """An isometric box standing on a diamond footprint: returns its corners
+    (left, front, right, back) at the top of the walls."""
+    drop = half_w / 2
+    base_l, base_f, base_r = (cx - half_w, bottom - drop), (cx, bottom), (cx + half_w, bottom - drop)
+    top_l, top_f, top_r = (base_l[0], base_l[1] - wall), (cx, bottom - wall), (base_r[0], base_r[1] - wall)
+    top_b = (cx, top_f[1] - drop * 2)
+    pygame.draw.polygon(surface, left_color, [base_l, base_f, top_f, top_l])
+    pygame.draw.polygon(surface, right_color, [base_f, base_r, top_r, top_f])
+    if top_color:
+        pygame.draw.polygon(surface, top_color, [top_l, top_f, top_r, top_b])
+    pygame.draw.lines(surface, PROP_INK, True, [base_l, base_f, base_r, top_r, top_b if top_color else top_r, top_l])
+    pygame.draw.line(surface, PROP_INK, base_f, top_f)
+    return top_l, top_f, top_r, top_b
+
+
+# Jerusalem stone: the warm, pale limestone the city is built from.
+LIMESTONE = [(232, 218, 186), (226, 208, 172), (238, 226, 198), (220, 204, 170)]
+SHUTTER_COLORS = [(52, 104, 140), (64, 120, 96), (96, 62, 34), (60, 86, 130)]
+AWNING_COLORS = [(170, 60, 50), (200, 150, 60), (90, 110, 150), (230, 220, 200)]
+HOUSE_STORIES = 2
+
+
+def house_parapet(width):
+    """How far the parapet round a flat roof rises above it."""
+    return max(3, round((width - 1) / 2 * 0.12))
+
+
+def build_house_sprite(width, height, seed=0, roof=None, bays=1):
+    """A house of old Jerusalem: walls of pale limestone laid in courses,
+    two storeys split by a stone ledge,
+    arched windows with painted shutters, an arched wooden door, and a flat
+    roof behind a low parapet - with, now and then, a small white dome, an
+    awning over the door or water jars on the roof. `bays` is how many
+    tiles long each wall is: houses standing together in a square are drawn
+    as one bigger house (see house_blocks in game_logic), with windows for
+    every bay. (`roof` is accepted for older props.csv files; every house
+    has a flat roof now.)"""
+    key = ("house", width, height, seed, bays)
+    if key in _building_cache:
+        return _building_cache[key]
+    rng = random.Random(seed)
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    cx, bottom, half_w = (width - 1) / 2, height - 1, (width - 1) / 2
+    para = house_parapet(width)
+    wall = max(8.0, height - half_w - para)       # up to the top of the parapet
+    floors_wall = wall - para                     # up to the roof itself
+    stone = rng.choice(LIMESTONE)
+    lit = stone
+    shade = tuple(int(c * 0.74) for c in stone)
+    rim = tuple(min(255, int(c * 1.06)) for c in stone)
+    shutters = rng.choice(SHUTTER_COLORS)
+    top_l, top_f, top_r, top_b = _iso_box(surface, cx, bottom, half_w, wall, lit, shade, rim)
+
+    def on_left(u, v):   # u along the wall (0 left corner .. 1 front), v up to the parapet top (0 .. 1)
+        return cx - half_w + half_w * u, (bottom - half_w / 2) + (half_w / 2) * u - wall * v
+
+    def on_right(u, v):  # u from the front corner (0) to the right corner (1)
+        return cx + half_w * u, bottom - (half_w / 2) * u - wall * v
+
+    # Courses of stone: faint lines every few pixels, with staggered joints.
+    course = max(4, round(wall / 9))
+    for on_wall, color in ((on_left, tuple(int(c * 0.9) for c in lit)), (on_right, tuple(int(c * 0.88) for c in shade))):
+        for row, y in enumerate(range(course, int(wall), course)):
+            v = y / wall
+            pygame.draw.line(surface, color, on_wall(0.0, v), on_wall(1.0, v), 1)
+            for joint in range(2 * bays):
+                u = (joint + (0.25 if row % 2 else 0.75)) / (2 * bays)
+                pygame.draw.line(surface, color, on_wall(u, v), on_wall(u, v - course / wall), 1)
+
+    def arched(on_wall, u0, u1, v0, v1, fill):
+        """An opening with a round arch on top, skewed onto the wall."""
+        uc, ru = (u0 + u1) / 2, (u1 - u0) / 2
+        rv = min(ru * half_w / wall, (v1 - v0) * 0.6)
+        points = [on_wall(u0, v0), on_wall(u1, v0)]
+        for i in range(9):
+            a = math.pi * i / 8
+            points.append(on_wall(uc + ru * math.cos(a), v1 - rv + rv * math.sin(a)))
+        pygame.draw.polygon(surface, fill, points)
+        pygame.draw.lines(surface, PROP_INK, True, points)
+
+    stories = HOUSE_STORIES
+    story = floors_wall / stories / wall               # one storey, as a fraction of v
+    door_bay = bays // 2
+    for floor in range(stories):
+        base = floor * story
+        if floor:
+            # A stone ledge between the floors.
+            for on_wall, color in ((on_left, rim), (on_right, tuple(int(c * 0.9) for c in shade))):
+                pygame.draw.line(surface, color, on_wall(0, base), on_wall(1, base), 2)
+                pygame.draw.line(surface, PROP_INK, on_wall(0, base - 1 / wall), on_wall(1, base - 1 / wall), 1)
+        for bay in range(bays):
+            u = (bay + 0.5) / bays
+            span = 0.15 / bays
+            for on_wall in (on_left, on_right):
+                if floor == 0 and on_wall is on_left and bay == door_bay:
+                    arched(on_left, u - span * 1.1, u + span * 1.1, 0, story * 0.82, (104, 66, 34))
+                    knob = on_left(u + span * 0.6, story * 0.38)
+                    pygame.draw.circle(surface, (210, 180, 90), (round(knob[0]), round(knob[1])), 1)
+                    continue
+                v0, v1 = base + story * 0.3, base + story * 0.78
+                arched(on_wall, u - span * 0.7, u + span * 0.7, v0, v1, (46, 40, 44))
+                # Painted shutters folded back either side of the window.
+                for side in (-1, 1):
+                    edge = u + side * span * 0.7
+                    shutter = [on_wall(edge, v0), on_wall(edge + side * span * 0.45, v0),
+                               on_wall(edge + side * span * 0.45, v1 - 0.02), on_wall(edge, v1 - 0.02)]
+                    color = shutters if on_wall is on_left else tuple(int(c * 0.75) for c in shutters)
+                    pygame.draw.polygon(surface, color, shutter)
+    # An awning over the door, now and then.
+    if rng.random() < 0.45:
+        u = (door_bay + 0.5) / bays
+        span = 0.19 / bays
+        v = story * 0.92
+        awning = [on_left(u - span, v), on_left(u + span, v), on_left(u + span * 1.1, v - 0.07), on_left(u - span * 1.1, v - 0.07)]
+        awning = [(x - 3, y + 3) if i >= 2 else (x, y) for i, (x, y) in enumerate(awning)]
+        pygame.draw.polygon(surface, rng.choice(AWNING_COLORS), awning)
+        pygame.draw.lines(surface, PROP_INK, True, awning)
+
+    # The flat roof, sunk behind its parapet: the inner faces of the far
+    # parapet walls show above the roof floor.
+    inset = max(2.0, para * 0.8)
+    mid_y = (top_f[1] + top_b[1]) / 2
+
+    def inner(point):
+        return point[0] + (cx - point[0]) * inset / half_w, point[1] + (mid_y - point[1]) * inset / half_w
+    rim_in = [inner(p) for p in (top_l, top_f, top_r, top_b)]
+    floor_in = [(x, y + para) for x, y in rim_in]
+    pygame.draw.polygon(surface, tuple(int(c * 0.9) for c in stone), floor_in)
+    l_in, f_in, r_in, b_in = rim_in
+    l_fl, f_fl, r_fl, b_fl = floor_in
+    pygame.draw.polygon(surface, tuple(int(c * 0.8) for c in stone), [l_in, b_in, b_fl, l_fl])
+    pygame.draw.polygon(surface, tuple(int(c * 0.68) for c in stone), [b_in, r_in, r_fl, b_fl])
+    pygame.draw.lines(surface, PROP_INK, True, rim_in)
+    pygame.draw.lines(surface, PROP_INK, True, [top_l, top_f, top_r, top_b])
+    # Rain spouts poking out under the parapet.
+    for u in (0.25, 0.75):
+        x, y = on_left(u, (floors_wall + para * 0.3) / wall)
+        pygame.draw.line(surface, (110, 96, 80), (x, y), (x - 3, y + 1), 2)
+
+    # On the roof: a small white dome, or a couple of water jars.
+    roof_x, roof_y = (l_fl[0] + r_fl[0]) / 2, (f_fl[1] + b_fl[1]) / 2
+    if bays > 1 or rng.random() < 0.5:
+        r = max(4.0, half_w * (0.26 if bays == 1 else 0.2))
+        dome_x = roof_x + (rng.uniform(-0.25, 0.25) * half_w if bays > 1 else 0)
+        dome_y = roof_y - r * 0.15
+        drum = pygame.Rect(0, 0, round(r * 2), max(2, round(r * 0.9)))
+        drum.center = (round(dome_x), round(dome_y))
+        pygame.draw.ellipse(surface, (200, 190, 168), drum)
+        dome = [(dome_x + r * math.cos(a), dome_y - r * 1.05 * math.sin(a)) for a in [math.pi * i / 12 for i in range(13)]]
+        pygame.draw.polygon(surface, (246, 242, 230), dome)
+        pygame.draw.polygon(surface, (214, 206, 188), dome[:5] + [(dome_x, dome_y)])
+        pygame.draw.lines(surface, PROP_INK, False, dome)
+        pygame.draw.line(surface, PROP_INK, (dome_x, dome_y - r * 1.05), (dome_x, dome_y - r * 1.05 - 3))
+    else:
+        for i in range(2):
+            jx, jy = roof_x - half_w * 0.2 + i * half_w * 0.18, roof_y + i * 2
+            pygame.draw.ellipse(surface, (176, 104, 64), (jx - 3, jy - 6, 6, 7))
+            pygame.draw.ellipse(surface, PROP_INK, (jx - 3, jy - 6, 6, 7), 1)
+    _building_cache[key] = surface
+    return surface
+
+
+def build_well_sprite(width, height, seed=0):
+    """A village well: a round stone ring with dark water, two wooden posts
+    and a crossbeam with a bucket hanging on a rope."""
+    key = ("well", width, height, seed)
+    if key in _building_cache:
+        return _building_cache[key]
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    cx, bottom = (width - 1) / 2, height - 1
+    rx, ry = width * 0.42, width * 0.21
+    ring_h = height * 0.28
+    base_y = bottom - ry
+    top_y = base_y - ring_h
+    stone, stone_dark = (150, 142, 130), (108, 102, 94)
+    # The ring's wall: a box between two ellipses.
+    pygame.draw.ellipse(surface, stone_dark, (cx - rx, base_y - ry, rx * 2, ry * 2))
+    pygame.draw.rect(surface, stone, (cx - rx, top_y, rx * 2, ring_h))
+    pygame.draw.rect(surface, stone_dark, (cx, top_y, rx, ring_h))
+    for i in range(1, 3):
+        y = top_y + ring_h * i / 3
+        pygame.draw.line(surface, PROP_INK, (cx - rx, y), (cx + rx, y), 1)
+    pygame.draw.ellipse(surface, (178, 170, 156), (cx - rx, top_y - ry, rx * 2, ry * 2))
+    pygame.draw.ellipse(surface, (40, 58, 74), (cx - rx * 0.72, top_y - ry * 0.72, rx * 1.44, ry * 1.44))
+    pygame.draw.ellipse(surface, PROP_INK, (cx - rx, top_y - ry, rx * 2, ry * 2), 1)
+    pygame.draw.line(surface, PROP_INK, (cx - rx, top_y), (cx - rx, base_y), 1)
+    pygame.draw.line(surface, PROP_INK, (cx + rx, top_y), (cx + rx, base_y), 1)
+    # Posts, crossbeam and bucket.
+    post_top = 2
+    wood, wood_dark = (122, 80, 40), (84, 52, 24)
+    for x in (cx - rx * 0.85, cx + rx * 0.85):
+        pygame.draw.line(surface, wood_dark, (x, top_y), (x, post_top), max(2, round(width * 0.06)))
+    pygame.draw.line(surface, wood, (cx - rx * 0.95, post_top + 2), (cx + rx * 0.95, post_top + 2), max(2, round(width * 0.06)))
+    pygame.draw.line(surface, (210, 190, 140), (cx, post_top + 3), (cx, top_y - ry * 0.3), 1)
+    pygame.draw.rect(surface, wood, (cx - 3, top_y - ry * 0.3, 6, 5))
+    pygame.draw.rect(surface, PROP_INK, (cx - 3, top_y - ry * 0.3, 6, 5), 1)
+    _building_cache[key] = surface
+    return surface
+
+
+def build_ranch_sprite(width, height, seed=0):
+    """A ranch pen: a wooden fence around the tile with a sheep (or a goat)
+    standing inside."""
+    key = ("ranch", width, height, seed)
+    if key in _building_cache:
+        return _building_cache[key]
+    rng = random.Random(seed)
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    cx, bottom, half_w = (width - 1) / 2, height - 1, (width - 1) / 2
+    drop = half_w / 2
+    left, front, right = (cx - half_w, bottom - drop), (cx, bottom), (cx + half_w, bottom - drop)
+    back = (cx, bottom - drop * 2)
+    post_h = max(height * 0.3, height - drop * 2 - 2)
+    wood, wood_dark = (150, 100, 52), (100, 64, 30)
+
+    def fence(a, b, color):
+        for t in (0.0, 0.5, 1.0):
+            x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            pygame.draw.line(surface, color, (x, y), (x, y - post_h), 2)
+        for v in (0.45, 0.85):
+            pygame.draw.line(surface, color, (a[0], a[1] - post_h * v), (b[0], b[1] - post_h * v), 2)
+    # Back rails first, then the animal, then the front rails over it.
+    fence(left, back, wood_dark)
+    fence(back, right, wood_dark)
+    animal_x, animal_y = cx + rng.uniform(-4, 4), bottom - drop - 2
+    wool = (240, 236, 226) if rng.random() < 0.75 else (120, 96, 72)
+    pygame.draw.ellipse(surface, wool, (animal_x - 7, animal_y - 7, 14, 9))
+    pygame.draw.ellipse(surface, PROP_INK, (animal_x - 7, animal_y - 7, 14, 9), 1)
+    pygame.draw.ellipse(surface, (60, 52, 46), (animal_x + 4, animal_y - 8, 5, 5))
+    for lx in (animal_x - 4, animal_x + 3):
+        pygame.draw.line(surface, (60, 52, 46), (lx, animal_y + 1), (lx, animal_y + 4), 1)
+    fence(left, front, wood)
+    fence(front, right, wood)
+    _building_cache[key] = surface
+    return surface
+
+
+def build_rubble_sprite(width, height, seed=0):
+    """What a destroyed prop leaves: a low heap of broken stone and wood."""
+    key = ("rubble", width, height, seed)
+    if key in _building_cache:
+        return _building_cache[key]
+    rng = random.Random(seed)
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    for _ in range(9):
+        w = rng.uniform(width * 0.12, width * 0.24)
+        h = w * 0.55
+        x = rng.uniform(width * 0.15, width * 0.85 - w)
+        y = rng.uniform(height * 0.3, height - h - 1)
+        color = rng.choice([(140, 132, 120), (112, 106, 98), (124, 88, 52), (164, 156, 140)])
+        pygame.draw.ellipse(surface, color, (x, y, w, h))
+        pygame.draw.ellipse(surface, PROP_INK, (x, y, w, h), 1)
+    _building_cache[key] = surface
+    return surface
+
+
 def load_background_image(background_path, invalid_assets):
     if not background_path:
         return None
@@ -389,7 +668,9 @@ def build_character_portraits(units, invalid_assets):
         anime_path = character_art_path(u.portrait_path)
         portrait_img = load_image_safe(anime_path or u.portrait_path, invalid_assets)
         if portrait_img:
-            if u.name == "Centurion Marcus" and not anime_path:
+            # The old shared legionnaire art is tinted gold to set Marcus apart;
+            # a token of his own needs no tint.
+            if u.name == "Centurion Marcus" and u.portrait_path.endswith("legionaire.png"):
                 gold_tint = pygame.Surface(portrait_img.get_size(), pygame.SRCALPHA)
                 gold_tint.fill((255, 190, 40, 255))
                 portrait_img = portrait_img.copy()

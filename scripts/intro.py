@@ -1,7 +1,8 @@
 """The game's front door: a title screen, and for a New Game the survey that
 decides the hero's class (see scripts/hero.py) - Paul, the hero's advisor,
 introduces it, the player picks the super short (4), short (12) or long (30)
-version - or skips it and picks a class outright - the questions follow, the player names their character,
+version - or skips it and picks a class outright - the questions follow, the player names their character
+and shapes how they look and the uniform they start in (scripts/hero_creator.py),
 and the result screen shows the class, its skills and Paul's counsel. Then the world map (scripts/world_map.py),
 where each story is told (scripts/story.py) and fought.
 
@@ -16,8 +17,10 @@ import pygame
 from scripts.assets import draw_nine_slice_panel, get_font, load_image_safe, load_nine_slice_frame
 from scripts.config import SCREEN_HEIGHT, SCREEN_WIDTH
 from scripts.game_logic import SIGNATURE_PREVIEW
+from scripts.hero_creator import look_screen
+from scripts.hero_look import hero_token
 from scripts.hero import (
-    DEFAULT_HERO_NAME, HERO_TOKEN, MAX_NAME_LENGTH, ROLE_COLORS, load_classes_from_csv, load_profile,
+    DEFAULT_HERO_NAME, MAX_NAME_LENGTH, ROLE_COLORS, load_classes_from_csv, load_profile,
     load_survey_from_csv, save_profile, score_survey,
 )
 from scripts.skybox import Skybox
@@ -382,14 +385,17 @@ async def name_screen(screen):
 
 
 async def result_screen(screen, profile, cls):
-    """The class reveal and Paul's counsel. Returns "begin", "retake" or
-    "choose" (pick a different class by hand)."""
+    """The class reveal and Paul's counsel. Returns "begin", "retake",
+    "choose" (pick a different class by hand) or "look" (back to the
+    character creator)."""
     big, head, body, small = get_font(64, bold=True), get_font(34, bold=True), get_font(28), get_font(24)
     role_color = ROLE_COLORS[cls["role"]]
     panel = pygame.Rect(90, 50, SCREEN_WIDTH - 180, SCREEN_HEIGHT - 100)
     begin_rect = pygame.Rect(panel.right - 330, panel.bottom - 100, 260, 60)
     retake_rect = pygame.Rect(panel.right - 610, panel.bottom - 100, 260, 60)
     choose_rect = pygame.Rect(panel.right - 890, panel.bottom - 100, 260, 60)
+    look_rect = pygame.Rect(panel.right - 1170, panel.bottom - 100, 260, 60)
+    token = hero_token(profile, cls["role"])
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -401,6 +407,8 @@ async def result_screen(screen, profile, cls):
                     return "retake"
                 if choose_rect.collidepoint(event.pos):
                     return "choose"
+                if look_rect.collidepoint(event.pos):
+                    return "look"
             if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 return "begin"
         screen.backdrop()
@@ -423,13 +431,14 @@ async def result_screen(screen, profile, cls):
                 detail = SIGNATURE_PREVIEW.get(skill, "Ranged disarm, 4 tiles" if skill == "Sling" else "")
                 screen.surface.blit(small.render(detail, True, DIM), (left + 420, y + 4))
             y += 40
-        screen.portrait(HERO_TOKEN.format(role=cls["role"].lower()), pygame.Rect(panel.right - 470, panel.y + 60, 400, 200))
+        screen.portrait(token, pygame.Rect(panel.right - 470, panel.y + 60, 400, 200))
         counsel = pygame.Rect(panel.right - 560, panel.y + 290, 490, 330)
         pygame.draw.rect(screen.surface, (28, 22, 16), counsel, border_radius=10)
         pygame.draw.rect(screen.surface, (150, 120, 80), counsel, 2, border_radius=10)
         screen.portrait(PAUL_TOKEN, pygame.Rect(counsel.x + 10, counsel.y + 10, 160, 80))
         screen.surface.blit(head.render("Paul's counsel", True, GOLD), (counsel.x + 180, counsel.y + 30))
         blit_wrapped(screen.surface, f"“{cls['advice']}”", small, TEXT, counsel.x + 30, counsel.y + 110, counsel.width - 60)
+        screen.button(look_rect, "Change look", look_rect.collidepoint(pygame.mouse.get_pos()), small)
         screen.button(choose_rect, "Choose class", choose_rect.collidepoint(pygame.mouse.get_pos()), small)
         screen.button(retake_rect, "Retake survey", retake_rect.collidepoint(pygame.mouse.get_pos()), small)
         screen.button(begin_rect, "Set out", begin_rect.collidepoint(pygame.mouse.get_pos()), head)
@@ -437,13 +446,14 @@ async def result_screen(screen, profile, cls):
 
 
 async def new_game(screen):
-    """Survey (super short, short or long) or a class picked outright -> name -> result,
-    until the player sets out; the result screen can retake the survey or
-    swap in a hand-picked class. Returns the saved profile."""
+    """Survey (super short, short or long) or a class picked outright -> name
+    -> look and starting uniform -> result, until the player sets out; the
+    result screen can retake the survey, swap in a hand-picked class or go
+    back to the look. Returns the saved profile."""
     classes = load_classes_from_csv()
     await paul_intro(screen)
     mode = await length_screen(screen)
-    name, hero_type = None, None
+    name, hero_type, look = None, None, None
     while True:
         if hero_type is None:
             if mode == "pick":
@@ -456,7 +466,9 @@ async def new_game(screen):
                 hero_type = score_survey(questions, await survey_screen(screen, questions))
         if name is None:
             name = await name_screen(screen)
-        profile = {"name": name, "type": hero_type}
+        if look is None:
+            look = await look_screen(screen, None, classes[hero_type]["role"])
+        profile = {"name": name, "type": hero_type, "look": look}
         action = await result_screen(screen, profile, classes[hero_type])
         if action == "begin":
             save_profile(profile)
@@ -466,6 +478,8 @@ async def new_game(screen):
             mode = await length_screen(screen)
         elif action == "choose":
             hero_type = await class_picker(screen, classes, current=hero_type) or hero_type
+        elif action == "look":
+            look = await look_screen(screen, look, classes[hero_type]["role"])
 
 
 async def start_game():

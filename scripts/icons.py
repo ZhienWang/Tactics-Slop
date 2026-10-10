@@ -143,6 +143,16 @@ def g_shove(s, k, c):
         pygame.draw.line(s, c, (4 * k, y * k), (10 * k, y * k), int(5 * k))
 
 
+def g_horseshoe(s, k, c):
+    """A horseshoe, open end down - the donkey's Kick."""
+    rect = pygame.Rect(18 * k, 10 * k, 64 * k, 76 * k)
+    pygame.draw.arc(s, c, rect, 0, math.pi, int(15 * k))
+    pygame.draw.rect(s, c, pygame.Rect(18 * k, 46 * k, 15 * k, 40 * k))
+    pygame.draw.rect(s, c, pygame.Rect(67 * k, 46 * k, 15 * k, 40 * k))
+    for x, y in ((25, 40), (75, 40), (34, 20), (66, 20), (25, 64), (75, 64)):
+        pygame.draw.circle(s, (0, 0, 0, 0), (round(x * k), round(y * k)), max(1, round(2.5 * k)))
+
+
 def g_chevrons(s, k, c):
     for y in (20, 46):
         pygame.draw.polygon(s, c, _p([(50, y), (84, y + 30), (70, y + 30), (50, y + 14), (30, y + 30), (16, y + 30)], k))
@@ -254,7 +264,7 @@ GLYPHS = {
     "Defend": g_shield, "Shield of Faith": lambda s, k, c: g_shield(s, k, c, cross=True),
     "Slash": g_sword, "Shoot": g_bow, "Sling": g_sling, "Command": g_horn, "Fish net": g_net,
     "Blind": lambda s, k, c: g_eye(s, k, c, slash=True), "Heal Blind": g_eye,
-    "Shove": g_shove, "Rally": g_chevrons, "Inspire": g_sun, "Psalm": g_note, "Breaking Bread": g_bread,
+    "Shove": g_shove, "Kick": g_horseshoe, "Rally": g_chevrons, "Inspire": g_sun, "Psalm": g_note, "Breaking Bread": g_bread,
     "Parable": g_scroll, "Good News": g_bubble, "Reason Together": g_bubble, "Bold Venture": g_die,
     "Disputation": g_spiral, "Grand Design": g_scroll, "Intercession": lambda s, k, c: g_plus(s, k, c, ring=True),
     "Peacemaker": g_shield, "Provision": g_pouch,

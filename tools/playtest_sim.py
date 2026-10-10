@@ -124,10 +124,11 @@ def load_stage(stage):
     g.ITEM_REGISTRY = load_items_from_csv()
     g.EQUIPMENT_REGISTRY = load_equipment_from_csv()
     g.BOOK_REGISTRY = load_books_from_csv()
-    g.CHARACTER_ROSTER = load_characters_from_csv(stage["characters"])
     g.TERRAIN_LAYOUT = load_terrain_from_csv(stage["terrain_layout"])
-    g.MAP_PROPS = load_props_from_csv(os.path.join(os.path.dirname(stage["characters"]), "props.csv"))
-    g.PROP_TILES = {(p["x"], p["y"]) for p in g.MAP_PROPS}
+    g.reset_props(os.path.join(os.path.dirname(stage["characters"]), "props.csv"))
+    # The stage's enemies and NPCs, plus the company from the roster.
+    cast = load_characters_from_csv(stage["characters"])
+    g.CHARACTER_ROSTER = g.stage_company(stage, None, cast) + cast
     g.ESCAPE_TILES = load_escape_tiles_from_csv(os.path.join(os.path.dirname(stage["characters"]), "escape.csv"))
 
 

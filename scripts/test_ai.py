@@ -6,7 +6,7 @@ import random
 import pytest
 
 from scripts import game_logic
-from scripts.data_editor import load_dialogues_from_csv, load_skills_from_csv, load_characters_from_csv, load_stage_manifest, load_escape_tiles_from_csv
+from scripts.data_editor import load_dialogues_from_csv, load_skills_from_csv, load_characters_from_csv, load_stage_manifest, load_escape_tiles_from_csv, load_map_from_csv
 
 
 def make_unit(name, team, x, y, faith, mp, skills, char_class="Knight"):
@@ -1462,10 +1462,16 @@ def test_the_road_to_damascus_is_the_first_stage_saul_and_his_guards_ride_agains
     assert game_logic.FIRST_STAGE_NODE == "damascus"
     manifest = load_stage_manifest()
     assert list(manifest)[0] == "damascus"
-    roster = load_characters_from_csv(manifest["damascus"]["characters"])
-    players = [c for c in roster if c["team"] == "Player"]
-    enemies = [c for c in roster if c["team"] != "Player"]
-    assert "Paul" in {c["name"] for c in players}
+    cast = load_characters_from_csv(manifest["damascus"]["characters"])
+    game_logic.MAP_DATA = load_map_from_csv(manifest["damascus"]["map_layout"])
+    game_logic.reset_props(os.path.join(os.path.dirname(manifest["damascus"]["characters"]), "props.csv"))
+    # Saul is the only one of the company there, riding out at full faith.
+    company = game_logic.stage_company(manifest["damascus"], None, cast)
+    assert [c["name"] for c in company] == ["Paul"]
+    assert company[0]["faith"] == game_logic.FAITH_CAP
+    players = company + [c for c in cast if c["team"] == "Player"]
+    enemies = [c for c in cast if c["team"] != "Player"]
+    assert {c["name"] for c in players} == {"Paul", "Temple Guard 1", "Temple Guard 2", "Temple Guard 3", "Temple Guard 4"}
     assert all(c["mount"] == "horse" for c in players)
     assert len(enemies) == 6 and not any(c["mount"] for c in enemies)
     # The disciples borrow apostle tokens, so each has its own face portrait.
@@ -1664,3 +1670,12 @@ def test_stamina_does_not_grow_with_level():
     apostle = make_unit("Peter", "Player", 0, 0, 100, 3, [])
     game_logic.grow_one_level(apostle, 2)
     assert apostle.max_mp == 3
+
+
+def test_a_move_is_only_confirmed_once_the_menu_click_has_settled():
+    delay = game_logic.MOVE_CONFIRM_DELAY_MS
+    assert delay == 500
+    assert not game_logic.move_confirm_ready(1000, 1000 + delay - 1)
+    assert game_logic.move_confirm_ready(1000, 1000 + delay)
+    # Dragging the unit itself is deliberate - no wait.
+    assert game_logic.move_confirm_ready(1000, 1001, by_drag=True)

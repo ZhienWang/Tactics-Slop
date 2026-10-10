@@ -95,6 +95,12 @@ TERRAIN_THEMES = {
     "desert": {"assets/sand.png": 3, "assets/dirt.png": 2, "assets/stone.png": 2, "assets/water.png": 1},
     "mountain": {"assets/stone.png": 3, "assets/cobblestone.png": 2, "assets/snow.png": 2, "assets/dirt.png": 1},
     "city": {"assets/cobblestone.png": 3, "assets/stone.png": 2, "assets/wood.png": 2, "assets/sand.png": 1},
+    # The location maps (tools/generate_stage_maps.py):
+    "walled_city": {"assets/stone.png": 3, "assets/cobblestone.png": 2, "assets/sand.png": 2, "assets/dirt.png": 1},
+    "farmland": {"assets/grass.jpg": 3, "assets/dirt.png": 2, "assets/moss.png": 1, "assets/water.png": 1},
+    "riverside": {"assets/grass.jpg": 3, "assets/cobblestone.png": 2, "assets/dirt.png": 2, "assets/stone.png": 1, "assets/water.png": 1},
+    "harbour": {"assets/sand.png": 3, "assets/stone.png": 2, "assets/water.png": 2, "assets/wood.png": 1, "assets/dirt.png": 1},
+    "hill_city": {"assets/cobblestone.png": 3, "assets/grass.jpg": 2, "assets/stone.png": 2, "assets/dirt.png": 1},
 }
 
 # Which theme each stage's terrain should draw from if its terrain_layout.csv
@@ -103,11 +109,11 @@ TERRAIN_THEMES = {
 # terrain already uses, so a regenerated map still reads as the same place.
 STAGE_THEMES = {
     "damascus": "desert",
-    "jerusalem": "coastal",
-    "antioch": "village",
-    "philippi": "hillside",
-    "corinth": "desert",
-    "ephesus": "mountain",
+    "jerusalem": "walled_city",
+    "antioch": "farmland",
+    "philippi": "riverside",
+    "corinth": "harbour",
+    "ephesus": "hill_city",
     "rome": "city",
 }
 
@@ -402,7 +408,8 @@ def load_map_layers_csv(filepath=None):
 
 
 def load_props_from_csv(filepath=None):
-    """Parses a stage's scenery props - trees so far - as {x, y, prop,
+    """Parses a stage's scenery props (trees, boulders, houses, wells,
+    ranches) as {x, y, prop,
     height}, where height is how many map height units tall the prop
     stands. A prop owns its whole tile: nothing can walk onto it. Most
     stages have no props, so a missing file just means "no scenery here"
@@ -421,6 +428,9 @@ def load_props_from_csv(filepath=None):
                 "prop": row["prop"].strip(),
                 "height": normalize_height(row["height"]),
             })
+            # Optional: a variant of the prop, e.g. a house's roof ("flat"/"tiled").
+            if (row.get("style") or "").strip():
+                props[-1]["style"] = row["style"].strip()
     return props
 
 
@@ -714,10 +724,12 @@ def load_characters_from_csv(filepath=None):
             # Reconstruct the character map dictionary expected by the Unit class
             char_data = {
                 "name": row["name"],
-                "team": row["team"],
+                "team": row.get("team") or "Player",
                 "class": row.get("class", "").strip(),
-                "x": int(row["x"]),
-                "y": int(row["y"]),
+                # The roster (data/roster.csv) has no positions - a party's
+                # start tiles come from each stage's party_start.csv.
+                "x": int(row.get("x") or 0),
+                "y": int(row.get("y") or 0),
                 "speed": int(row["speed"]),
                 "mv": int(row["mv"]),
                 "jump": int(row["jump"]),

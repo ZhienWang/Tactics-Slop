@@ -118,7 +118,7 @@ damascus_outro,,narrate,,"That day Saul is baptized - and so are you."
 damascus_outro,,scripture,"Acts 9:18","Immediately something like scales fell from his eyes, and he received his sight. He arose and was baptized."
 damascus_outro,,reflect,"Acts 9:1-19","Ananias was afraid of Saul, and went to him anyway. Who might God be asking you to welcome?|Saul's whole life turned around on one road. What changed him - an argument, or meeting Jesus?|Ananias called his enemy 'Brother.' What would it look like to treat someone that way this week?"
 philippi_intro,,bg,,"sunny/cobblestone"
-philippi_intro,,title,"Story 4 - Acts 16","The Jailer's Household"
+philippi_intro,,title,"Story 8 - Acts 16","The Jailer's Household"
 philippi_intro,,narrate,,"Nearly twenty years later. Saul goes by Paul now, and you have walked a thousand miles of road beside him. A vision in the night has brought you all across the sea to Philippi, a Roman colony in Macedonia."
 philippi_intro,,show,Paul,"left"
 philippi_intro,,show,Silas,"right"
@@ -158,7 +158,7 @@ philippi_outro,,narrate,,"He brings you all up into his house and sets food befo
 philippi_outro,,scripture,"Acts 16:34","He brought them up into his house, and set food before them, and rejoiced greatly, with all his household, having believed in God."
 philippi_outro,,reflect,"Acts 16:16-34","Paul and Silas sang hymns in the dark after being beaten. Where does that kind of joy come from?|The prisoners could have run when the doors opened, but stayed. What did that do for the jailer?|Who in your life might be asking, 'What must I do to be saved?' - out loud or not?"
 patmos_intro,,bg,,"dusk/water"
-patmos_intro,,title,"Story 5 - Revelation","The Revelation on Patmos"
+patmos_intro,,title,"Story 12 - Revelation","The Revelation on Patmos"
 patmos_intro,,narrate,,"Around the year 95. Paul and Peter gave their lives in Rome long ago. Your hair is white now, and the road has ended at the sea - on Patmos, a rocky island where Rome sends those it wants forgotten."
 patmos_intro,,show,John,"left"
 patmos_intro,,show,{hero},"right"
@@ -188,3 +188,159 @@ patmos_intro,,scripture,"Revelation 21:4","He will wipe away every tear from the
 patmos_intro,,show,John,"left"
 patmos_intro,,say,John,"He who testifies these things says, 'Yes, I come quickly.' Amen! Yes, come, Lord Jesus."
 patmos_intro,,reflect,"Revelation 1:9-19 and 21:1-5","John was exiled for his testimony and still called himself a partner in perseverance. What helps you keep going when faith costs something?|The believers overcame 'by the word of their testimony.' What is your testimony - what has Jesus done in your life?|Revelation ends with all things made new. What do you most long to see made new?"
+jerusalem_intro,,bg,,dawn/stone
+jerusalem_intro,,title,Story 4 - Acts 9 and 12,The Man Nobody Trusted
+jerusalem_intro,,narrate,,"Three years after the road to Damascus. Saul has escaped the city in a basket let down over the wall, and now the two of you walk back into Jerusalem - the city where he once dragged believers from their houses."
+jerusalem_intro,,show,Paul,left
+jerusalem_intro,,show,{hero},right
+jerusalem_intro,,say,Paul,"They will not open their doors to me, {hero}. Why would they? I would not open mine."
+jerusalem_intro,,narrate,,He is right. In house after house the disciples hear his name and go pale. A door closes. Then another.
+jerusalem_intro,,hide,{hero},
+jerusalem_intro,,show,Barnabas,right
+jerusalem_intro,,say,Barnabas,"(Taking Saul's arm, loud enough for the whole street) Brothers! I have heard this man preach in Damascus with my own ears. He saw the Lord on the road. I will vouch for him - bring him to the apostles."
+jerusalem_intro,,scripture,Acts 9:27,"But Barnabas took him, and brought him to the apostles, and declared to them how he had seen the Lord in the way, and that he had spoken to him, and how at Damascus he had preached boldly in the name of Jesus."
+jerusalem_intro,,hide,,
+jerusalem_intro,,show,Simon Peter,center
+jerusalem_intro,,say,Simon Peter,"(Studying Saul a long moment) I once swore three times I never knew him. If the Lord can make something of me, he can make something of you. Stay with us, Saul."
+jerusalem_intro,,choice,Peter turns to you. What do you say?,"I was there at the empty tomb.|I came to arrest you once, too."
+jerusalem_intro,1,say,Simon Peter,"(A slow grin) Then you have seen what I have seen. Welcome, {hero}."
+jerusalem_intro,2,say,Simon Peter,"(He laughs out loud) So did half this city. Welcome, {hero}."
+jerusalem_intro,,narrate,,But the Greek-speaking Jews Saul argues with in the synagogues do not want to argue. They want him dead - and the temple guard has been told which house he sleeps in.
+jerusalem_outro,,bg,,night/stone
+jerusalem_outro,,narrate,,"Years later the church in Jerusalem is praying through the night at the house of Mary, John Mark's mother. Herod has killed James with the sword and thrown Peter into prison under four squads of soldiers."
+jerusalem_outro,,show,Mark,left
+jerusalem_outro,,say,Mark,"Keep praying. Mother says we pray until morning, whatever comes."
+jerusalem_outro,,narrate,,A knock at the outer gate. The servant girl Rhoda runs to answer it.
+jerusalem_outro,,show,Rhoda,right
+jerusalem_outro,,say,Rhoda,"(Flying back in, breathless) It's Peter! It's Peter's voice at the gate!"
+jerusalem_outro,,say,Mark,"Rhoda, you're out of your mind. Peter is in chains."
+jerusalem_outro,,scripture,Acts 12:14,"When she recognized Peter's voice, she didn't open the gate for joy, but ran in, and reported that Peter was standing in front of the gate."
+jerusalem_outro,,narrate,,"Peter keeps on knocking. When at last they open the gate, there he stands - an angel has led him out past the guards, through an iron gate that opened by itself."
+jerusalem_outro,,hide,,
+jerusalem_outro,,show,John,left
+jerusalem_outro,,show,Rhoda,right
+jerusalem_outro,,say,John,"Barnabas and Saul are taking the famine gifts back to Antioch. Mark is going with them - and so am I, for a while."
+jerusalem_outro,,say,Rhoda,(Already tying up her bundle) Then so am I. Somebody has to answer the door.
+jerusalem_outro,,scripture,Acts 12:16,"But Peter continued knocking. When they had opened, they saw him, and were amazed."
+jerusalem_outro,,reflect,Acts 9:26-30; 12:1-17,Barnabas risked his own good name for a man nobody trusted. Who needs someone to vouch for them near you?|The church prayed all night for Peter - and then didn't believe it when the answer knocked. Why is it so hard to believe our prayers are heard?|Rhoda was so happy she forgot to open the gate. When did good news last make you forget yourself?
+caesarea_intro,,bg,,sunny/sand
+caesarea_intro,,title,Story 5 - Acts 10 and 21,The Centurion's House
+caesarea_intro,,narrate,,"Caesarea, the Roman capital on the sea. Statues of Caesar, a harbor of white stone, and soldiers everywhere."
+caesarea_intro,,show,Philip,left
+caesarea_intro,,say,Philip,"I came here after the Ethiopian on the desert road, and never left. My four daughters prophesy - you'll hear them before you see them."
+caesarea_intro,,narrate,,"Philip leads you to a house where a Roman centurion is waiting at the door, as if he expected you."
+caesarea_intro,,show,Cornelius,right
+caesarea_intro,,say,Cornelius,"I am Cornelius, of the Italian cohort. Some years ago an angel told me to send for a man named Simon Peter. He came, and while he was still speaking the Spirit fell on all of us - Romans, all of us."
+caesarea_intro,,say,Cornelius,I have commanded a hundred men for half my life. Now I would like to serve under someone.
+caesarea_intro,,scripture,Acts 10:34-35,"Peter opened his mouth and said, 'Truly I perceive that God doesn't show favoritism; but in every nation he who fears him and works righteousness is acceptable to him.'"
+caesarea_intro,,choice,"Cornelius holds out his sword, hilt first. What do you do?",Tell him to keep it.|Take it - he won't need it now.
+caesarea_intro,1,say,{hero},"Keep it, Cornelius. Where we're going, someone will need protecting."
+caesarea_intro,2,say,Cornelius,"(He smiles and hands it over) Then I will carry a walking staff, like the rest of you."
+caesarea_intro,,scripture,Acts 21:8-9,"On the next day, we, who were Paul's companions, departed, and came to Caesarea. We entered into the house of Philip the evangelist, who was one of the seven, and stayed with him. Now this man had four virgin daughters who prophesied."
+caesarea_intro,,reflect,Acts 10:1-48; 21:8-9,"Cornelius was a Roman officer - one of the occupiers. What would it have taken for the believers to welcome him?|'God doesn't show favoritism.' Who are you tempted to think God favors less?|Philip stayed and served in one city for years. Is God asking you to go, or to stay?"
+antioch_intro,,bg,,sunny/grass
+antioch_intro,,title,"Story 6 - Acts 11, 13 and 15",First Called Christians
+antioch_intro,,narrate,,"Antioch on the Orontes, the third city of the empire. Here, for the first time, Greeks who have never kept the Law are believing in great numbers - and Barnabas has fetched Saul from Tarsus to teach them."
+antioch_intro,,show,Barnabas,left
+antioch_intro,,show,Titus,right
+antioch_intro,,say,Titus,In the market they've started calling us 'Christ-people' - Christianoi. I don't think they mean it kindly.
+antioch_intro,,say,Barnabas,(Laughing) Let them. It's a better name than most of us deserve.
+antioch_intro,,scripture,Acts 11:26,"When he had found him, he brought him to Antioch. For a whole year they were gathered together with the assembly, and taught many people. The disciples were first called Christians in Antioch."
+antioch_intro,,say,Titus,"Some men down from Judea say I'm not really one of you - not until I keep the whole Law. Am I one of you, {hero}?"
+antioch_intro,,choice,What do you tell Titus?,You were one of us the day you believed.|Come to Jerusalem and let the apostles say it.
+antioch_intro,1,say,Titus,(Letting out a long breath) Then I'm coming with you. Wherever the road goes.
+antioch_intro,2,say,Titus,"Then I'll go to Jerusalem and stand in front of them myself. Wherever the road goes, I'm on it."
+antioch_intro,,narrate,,But not everyone in Antioch welcomes a new kind of people. Word comes that a cohort has been sent to break up the gathering.
+antioch_outro,,bg,,dusk/grass
+antioch_outro,,narrate,,"The council in Jerusalem has spoken: the Gentiles are not to be burdened with the whole Law. Two men have carried the letter back to Antioch, and the church reads it aloud with joy."
+antioch_outro,,show,Silas,right
+antioch_outro,,say,Silas,"Judas Barsabbas goes home tomorrow. I am staying. The letter says the Gentiles are free - I would like to see it with my own eyes, city by city."
+antioch_outro,,show,Paul,left
+antioch_outro,,say,Paul,"Barnabas and I have parted ways over Mark. It grieves me. Will you come with me, Silas?"
+antioch_outro,,say,Silas,(Picking up his staff) I thought you'd never ask.
+antioch_outro,,scripture,Acts 15:40,"but Paul chose Silas, and went out, being commended by the brothers to the grace of God."
+antioch_outro,,reflect,Acts 11:19-26; 15:1-41,"The believers in Antioch were given a name by outsiders. What would people around you call you, by what they see?|The church settled a fierce argument by listening, Scripture and prayer. How do you handle disagreements about faith?|Paul and Barnabas split over Mark - and years later Paul called Mark useful. Is there a broken friendship you could still mend?"
+lystra_intro,,bg,,sunny/dirt
+lystra_intro,,title,Story 7 - Acts 14 and 16,A Donkey Named Barley
+lystra_intro,,narrate,,"Lystra, a little town in the hills of Lycaonia. The last time Paul came here, he healed a man lame from birth - and the crowd decided he and Barnabas were Zeus and Hermes come down."
+lystra_intro,,show,Paul,left
+lystra_intro,,say,Paul,They brought oxen and garlands to the city gate to sacrifice to us. Barnabas tore his clothes. I shouted myself hoarse.
+lystra_intro,,scripture,Acts 14:15,"Men, why are you doing these things? We also are men of like passions with you, and bring you good news, that you should turn from these vain things to the living God, who made the sky and the earth and the sea, and all that is in them;"
+lystra_intro,,say,Paul,"Then men came from Antioch and Iconium, and the same crowd stoned me and dragged me out of the city for dead. Still - some believed."
+lystra_intro,,hide,Paul,
+lystra_intro,,show,Lois,left
+lystra_intro,,show,Eunice,right
+lystra_intro,,say,Lois,"Some believed. I am one, and my daughter Eunice is another - and her son Timothy is the third, though he is shy about saying so."
+lystra_intro,,say,Eunice,"We taught him the Scriptures since he was small enough to sit on my knee. Paul, take him with you. And take us too - someone has to feed you all."
+lystra_intro,,show,Timothy,center
+lystra_intro,,say,Timothy,"Mother! (Then, quietly, to Paul) ...I would like to come. If you'll have me."
+lystra_intro,,scripture,2 Timothy 1:5,"having been reminded of the sincere faith that is in you; which lived first in your grandmother Lois, and your mother Eunice, and, I am persuaded, in you also."
+lystra_intro,,hide,,
+lystra_intro,,narrate,,"As you leave the gate, something nudges you hard in the back. A small grey donkey stands there, still wearing a wilted garland from the sacrifice that never happened, with two saddlebags of Eunice's bread on her back."
+lystra_intro,,show,Barley,center
+lystra_intro,,say,Barley,(Hee-haw!)
+lystra_intro,,say,Eunice,"Oh - that's Barley. She carried the garlands that day, and she has followed Paul around the town ever since. She won't go home. I've tried."
+lystra_intro,,choice,Barley stamps one hoof. What do you do?,Let her come.|Try to send her home.
+lystra_intro,1,say,{hero},A donkey carried our Lord into Jerusalem. I suppose one can carry our bread.
+lystra_intro,2,narrate,,"You point firmly back toward the town. Barley looks at you, sits down in the middle of the road, and does not move until you give up. She's coming."
+lystra_intro,,scripture,Numbers 22:28,"Yahweh opened the mouth of the donkey, and she said to Balaam, 'What have I done to you, that you have struck me these three times?'"
+lystra_intro,,reflect,Acts 14:8-20; 16:1-3; 2 Timothy 1:5,The crowd at Lystra praised Paul one day and stoned him soon after. Why did he go back?|Timothy's faith 'lived first' in his grandmother and mother. Whose faith lived in someone before it reached you?|Even a stubborn donkey has a place in this story. What small or stubborn thing might God use in you?
+troas_intro,,bg,,night/wood
+troas_intro,,title,Story 9 - Acts 16 and 20,The Boy in the Window
+troas_intro,,narrate,,"Troas, a port on the edge of Asia. Every road forward has closed - and then, in the night, Paul sees a man of Macedonia standing and begging, 'Come over and help us.'"
+troas_intro,,show,Luke,left
+troas_intro,,say,Luke,"I am a physician. I have treated sailors from every port on this coast. You'll want a doctor where you're going - and someone to write it all down, carefully, from the beginning."
+troas_intro,,scripture,Acts 16:9-10,"A vision appeared to Paul in the night. There was a man of Macedonia standing, begging him, and saying, 'Come over into Macedonia and help us.' When he had seen the vision, immediately we sought to go out to Macedonia, concluding that the Lord had called us to preach the Good News to them."
+troas_intro,,hide,,
+troas_intro,,narrate,,"Years later you pass through Troas again. On the first day of the week the church gathers in an upper room to break bread, and Paul, leaving in the morning, talks... and talks... until midnight."
+troas_intro,,narrate,,"A young man named Eutychus, sitting in the window, sinks into a deep sleep - and falls three stories to the ground."
+troas_intro,,show,Luke,right
+troas_intro,,say,Luke,(Kneeling in the street) He is dead. I am sorry - there is nothing -
+troas_intro,,show,Paul,left
+troas_intro,,say,Paul,(Throwing himself down and wrapping his arms around the boy) Don't be troubled. His life is in him.
+troas_intro,,narrate,,"Paul goes back upstairs, breaks the bread, and talks until dawn. Eutychus, very much alive, sits right at the front this time - and asks to come along."
+troas_intro,,show,Eutychus,center
+troas_intro,,say,Eutychus,I'll stay awake for the next one. Probably.
+troas_intro,,scripture,Acts 20:12,"They brought the boy in alive, and were greatly comforted."
+troas_intro,,reflect,Acts 16:6-10; 20:7-12,Paul found the way forward only after other doors closed. Has a closed door ever led you somewhere better?|Luke was a careful writer who checked everything. Why does it matter that the gospel was written down carefully?|Eutychus fell asleep in church - and was raised anyway. What does that tell you about God's patience with us?
+corinth_intro,,bg,,sunny/sand
+corinth_intro,,title,Story 10 - Acts 18 and Romans 16,Tentmakers and a Letter-Carrier
+corinth_intro,,narrate,,"Corinth, a city of two harbors, rich and rough and proud of both. Paul arrives tired and nearly penniless, and goes looking for work with his hands."
+corinth_intro,,show,Aquila,left
+corinth_intro,,show,Priscilla,right
+corinth_intro,,say,Aquila,"Claudius threw every Jew out of Rome, so here we are, stitching tents in Corinth. You know the trade? Then pull up a stool."
+corinth_intro,,say,Priscilla,"And stay with us. We have a room, and you look like you haven't slept in a bed since Athens."
+corinth_intro,,scripture,Acts 18:3,"Because he practiced the same trade, he lived with them and worked, for by trade they were tent makers."
+corinth_intro,,narrate,,"By day, canvas and leather. On the Sabbath, the synagogue. Many believe - and many others are furious. A crowd gathers at the workshop door."
+corinth_intro,,say,Priscilla,(Setting down her awl) Well. It seems the tents will have to wait.
+corinth_outro,,bg,,dusk/water
+corinth_outro,,narrate,,"The Lord has spoken to Paul in a vision: 'Don't be afraid, but speak and don't be silent; for I am with you.' He stays a year and a half."
+corinth_outro,,narrate,,"In Cenchreae, Corinth's eastern port, the church meets in the house of a woman named Phoebe. She has helped so many travelers that half the harbor owes her a favor."
+corinth_outro,,show,Phoebe,right
+corinth_outro,,say,Phoebe,"I have business in Rome, Paul. If you have a letter for the believers there, I will carry it myself - and see it read aloud."
+corinth_outro,,show,Paul,left
+corinth_outro,,say,Paul,(Smiling) Then the letter had better say something about you.
+corinth_outro,,scripture,Romans 16:1-2,"I commend to you Phoebe, our sister, who is a servant of the assembly that is at Cenchreae, that you receive her in the Lord, in a way worthy of the saints, and that you assist her in whatever matter she may need from you, for she herself also has been a helper of many, and of my own self."
+corinth_outro,,reflect,Acts 18:1-18; Romans 16:1-5,Paul worked a trade alongside his preaching. How can ordinary work be part of serving God?|Priscilla and Aquila opened their home and later 'risked their own necks' for Paul. What does hospitality cost?|Phoebe was trusted to carry the most important letter Paul ever wrote. Who has God trusted you to carry something to?
+ephesus_intro,,bg,,sunny/cobblestone
+ephesus_intro,,title,Story 11 - Acts 18 and 19,Great Is Artemis!
+ephesus_intro,,narrate,,"Ephesus: marble streets, a theater for twenty-five thousand, and the great temple of Artemis, one of the wonders of the world. Half the city earns its bread from her pilgrims."
+ephesus_intro,,show,Priscilla,left
+ephesus_intro,,show,Apollos,right
+ephesus_intro,,say,Apollos,I have preached in the synagogue for weeks. They tell me I speak like Moses himself. And yet you two keep looking at me as if I'd left out a chapter.
+ephesus_intro,,say,Priscilla,"(Kindly) Come to supper, Apollos. Aquila and I will tell you the rest of it."
+ephesus_intro,,scripture,Acts 18:24,"Now a certain Jew named Apollos, an Alexandrian by race, an eloquent man, came to Ephesus. He was mighty in the Scriptures."
+ephesus_intro,,say,Apollos,(Days later) The rest of it is better than anything I was saying. I will not keep quiet now.
+ephesus_intro,,hide,,
+ephesus_intro,,narrate,,"Two years on, so many have turned from the idols that the silversmiths who make little silver shrines of Artemis are going hungry. One of them, Demetrius, calls a meeting."
+ephesus_intro,,show,Demetrius,center
+ephesus_intro,,say,Demetrius,This Paul says that gods made with hands are no gods at all! Our trade is ruined - and the temple of the great goddess will count for nothing!
+ephesus_intro,,narrate,,"The crowd pours into the theater, shouting. Most of them do not even know why they are there."
+ephesus_outro,,bg,,dusk/stone
+ephesus_outro,,narrate,,"For two hours the theater roars, 'Great is Artemis of the Ephesians!' - until the town clerk finally quiets them and sends them home."
+ephesus_outro,,show,Apollos,left
+ephesus_outro,,say,Apollos,I am going on to Corinth. They need someone to water what Paul planted.
+ephesus_outro,,show,Paul,right
+ephesus_outro,,say,Paul,"I planted, Apollos watered - but God gives the growth. Go with my blessing."
+ephesus_outro,,scripture,Acts 19:34,"But when they perceived that he was a Jew, all with one voice for a time of about two hours cried out, 'Great is Artemis of the Ephesians!'"
+ephesus_outro,,reflect,Acts 18:24-28; 19:23-41,"Apollos was gifted and sincere, and still needed teaching. Who has helped you understand faith 'more accurately'?|The silversmiths cared most about their trade. What do people around you protect, even against the truth?|Most of the crowd didn't know why they were shouting. When have you gone along with a crowd?"

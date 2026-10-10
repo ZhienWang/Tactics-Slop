@@ -28,3 +28,4 @@ Bold Venture,0,1,0,Status,250,170,60
 Parable,1,3,0,Status,240,210,120
 Persecute,0,1,0,Status,160,60,60
 Blind,0,2,0,Status,120,110,150
+Kick,0,1,40,Physical,170,120,70

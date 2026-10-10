@@ -30,9 +30,9 @@ Mouse controls are supported.
 
 
 ## Future Goals: ##
-1. Itch.IO play test release
-2. Server
-3. Web-based Multiplayer
+1. Research on game mechanic hooks for this tactics game, it should be somewhat unique to stand out from the rest of the game genres.  Look into other RPGs for inspirations. Or look into the Bible theme for ideas.
+2. Episodic Releases and ask friends for feedbacks
+3. 
 
 ## Project Structure: ##
 
